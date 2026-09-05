@@ -13,9 +13,15 @@ Placeholder logo asset (`consultantcloud-logo.svg`) is a simple generated cloud 
 
 Two infrastructure issues found and fixed directly (not Qwen defects — both are test-harness configuration, not component logic): a stray `.cc-trace-blocked` CSS class the trace panel used but the stylesheet brief hadn't defined (added one rule); and `vitest.config.ts` needed `globals: true` for React Testing Library's automatic per-test DOM cleanup to register — without it, sequential tests accumulated DOM nodes from prior renders and produced false "multiple elements found" failures.
 
-What's still just eyeballed, not automated: pixel-level responsive behavior at the 900px breakpoint and general visual polish — no browser was driven in this pipeline. `pnpm --filter web dev` should be run manually to confirm before treating this as demo-ready.
+**Update: actually driven in a real browser (chrome-devtools MCP tools), not just unit-tested — and this surfaced three real bugs the automated tests couldn't see, all now fixed:**
 
-Verified: `next build` succeeds (static generation of `/`), `pnpm --filter web test` 3/3 passing, full workspace 34 tests passing.
+1. **Trace panel rendered in the wrong place entirely.** `ToolTracePanel` returned a React Fragment with the toggle button and the `.cc-trace-panel` div as sibling top-level elements. Since it was placed directly inside `.cc-app-shell` (a 2-column CSS Grid), the Fragment's two children became two separate grid items instead of one: the button landed alone in column 2, and the actual trace entries wrapped to a new row spanning column 1's width — rendering full-width below everything else instead of in the right column. Screenshot evidence before/after in `docs/screenshots/02-renewal-confirmation.png`. Fixed by wrapping both in one containing `<div className="cc-trace-panel">`, making it a single grid item.
+2. **Header text ran together with no spacing** ("OPEN SOURCE LABGitHubBuilt for Agentforce Revenue Management" as one visual run) because the two header `<div>`s had no `gap`. Fixed with flexbox gap, plus `flex-wrap` and a mobile-width media query so it degrades to a clean stacked layout instead of cramming into a narrow column.
+3. **Mobile "collapsed" trace panel wasn't actually collapsed** — it still rendered as a large empty background block instead of just the toggle button, because collapsing only hid the entries, not the panel container itself, which had no height constraint. Fixed with `max-height: 64px` on `.cc-trace-panel--collapsed`, overridden back to unconstrained on desktop where the panel should never collapse.
+
+All three are genuine layout defects that `ChatApp.test.tsx`'s DOM-presence assertions (via jsdom, which doesn't compute real CSS Grid layout) had no way to catch — this is exactly why the instruction to test UI changes in an actual browser before calling them done exists. Verified visually at both desktop (1440px) and mobile (390px) viewports after the fixes; screenshots in `docs/screenshots/`.
+
+Verified: `next build` succeeds (static generation of `/`), `pnpm --filter web test` 3/3 passing, full workspace 34 tests passing, and now also real-browser-verified across all four demo flows at two viewport widths.
 
 ## Goal
 

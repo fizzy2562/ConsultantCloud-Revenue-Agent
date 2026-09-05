@@ -12,13 +12,13 @@ export function ToolTracePanel({
   onToggle: () => void;
 }) {
   return (
-    <>
-      <button type="button" onClick={onToggle}>
+    <div
+      className={`cc-trace-panel ${expanded ? "cc-trace-panel--expanded" : "cc-trace-panel--collapsed"}`}
+    >
+      <button type="button" className="cc-trace-toggle" onClick={onToggle}>
         {expanded ? "Hide trace" : "Show trace"}
       </button>
-      <div
-        className={`cc-trace-panel ${expanded ? "cc-trace-panel--expanded" : "cc-trace-panel--collapsed"}`}
-      >
+      <div className="cc-trace-entries">
         {entries.map((entry, index) => (
           <div className="cc-trace-entry" key={index}>
             <span className={`cc-badge-${entry.badge.toLowerCase()}`}>
@@ -33,6 +33,6 @@ export function ToolTracePanel({
           </div>
         ))}
       </div>
-    </>
+    </div>
   );
 }
