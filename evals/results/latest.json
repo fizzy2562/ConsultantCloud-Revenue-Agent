@@ -1,12 +1,12 @@
 {
-  "runAt": "2026-09-05T14:02:27.600Z",
+  "runAt": "2026-09-05T18:14:41.256Z",
   "results": [
     {
       "id": "E01",
       "name": "Happy renewal",
       "input": "Renew Acme University for 3 years and increase Cloud Pro to 250.",
       "passed": true,
-      "notes": "renewal quote a0Qb92adf58-c5e8-43a5-9e3e-113bc56494e1 created only after confirmation"
+      "notes": "renewal quote a0Qff202b55-453b-4268-bc42-22545cbd9865 created only after confirmation"
     },
     {
       "id": "E02",
@@ -48,14 +48,21 @@
       "name": "Duplicate mutation",
       "input": "Renew Acme University for 3 years (sent twice).",
       "passed": true,
-      "notes": "duplicate request returned same quoteId a0Qae7ccae0-ca99-41de-bfd4-d1c001e51af2"
+      "notes": "duplicate request returned same quoteId a0Q0c77238a-a401-451e-ad80-4557ee3ac14d"
     },
     {
       "id": "E08",
-      "name": "Salesforce failure",
+      "name": "Salesforce failure (uncaught exception never fabricates success)",
       "input": "(simulated) API timeout during add_quote_line.",
       "passed": true,
       "notes": "gateway failure surfaced as a tool-call error, not a fabricated success"
+    },
+    {
+      "id": "E08b",
+      "name": "Salesforce failure (caught API error returns retryable envelope)",
+      "input": "(simulated) caught Salesforce API timeout during add_quote_line.",
+      "passed": true,
+      "notes": "caught Salesforce error returned a clear, retryable normal envelope"
     },
     {
       "id": "E09",
@@ -74,8 +81,8 @@
     }
   ],
   "summary": {
-    "total": 10,
-    "passed": 9,
+    "total": 11,
+    "passed": 10,
     "failed": 0,
     "skipped": 1
   }

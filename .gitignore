@@ -3,4 +3,5 @@ dist/
 .env
 .env.local
 *.log
+*.jsonl
 .DS_Store

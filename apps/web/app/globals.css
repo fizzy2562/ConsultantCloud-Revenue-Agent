@@ -5,12 +5,22 @@
   box-sizing: border-box;
 }
 
+html, body {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background-color: #f7f8fa;
   color: #1f2937;
   line-height: 1.5;
+}
+
+pre, code {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 /* ---------- Header ---------- */
@@ -81,12 +91,15 @@ body {
 .cc-app-shell {
   display: grid;
   grid-template-columns: 1fr;
+  grid-template-rows: 1fr 1fr;
   height: calc(100vh - 120px);
+  overflow: hidden;
 }
 
 @media (min-width: 900px) {
   .cc-app-shell {
     grid-template-columns: 65% 35%;
+    grid-template-rows: 1fr;
   }
 }
 
@@ -94,13 +107,17 @@ body {
 .cc-conversation-panel {
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  min-width: 0;
   overflow: hidden;
   background-color: #ffffff;
 }
 
 .cc-conversation-panel .cc-message-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 24px;
 }
 
@@ -113,7 +130,10 @@ body {
 /* ---------- Trace Panel ---------- */
 .cc-trace-panel {
   background-color: rgba(61, 127, 171, 0.06);
+  min-height: 0;
+  min-width: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -191,22 +211,27 @@ body {
 .cc-trace-entry {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 4px 12px;
   padding: 10px 0;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  max-width: 100%;
 }
 
 .cc-trace-entry .cc-trace-tool-name {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 0.875rem;
   font-weight: 500;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .cc-trace-entry .cc-trace-duration {
   margin-left: auto;
   font-size: 0.75rem;
   color: #9ca3af;
+  white-space: nowrap;
 }
 
 .cc-badge-read {
@@ -262,11 +287,14 @@ body {
   border-radius: 8px;
   background-color: #ffffff;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .cc-confirmation-card__actions {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   gap: 12px;
   margin-top: 16px;
 }
@@ -310,6 +338,8 @@ body {
   border-radius: 16px;
   margin-bottom: 12px;
   font-size: 0.9375rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .cc-chat-bubble--user {

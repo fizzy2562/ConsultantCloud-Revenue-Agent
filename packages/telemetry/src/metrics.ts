@@ -72,3 +72,28 @@ export function computeMetrics(events: ToolCallEvent[]): MetricsSummary {
     endToEndDurationMs,
   };
 }
+
+export function groupEventsByRun(events: ToolCallEvent[]): Map<string, ToolCallEvent[]> {
+  const eventsByRun = new Map<string, ToolCallEvent[]>();
+
+  for (const event of events) {
+    const runEvents = eventsByRun.get(event.runId);
+    if (runEvents) {
+      runEvents.push(event);
+    } else {
+      eventsByRun.set(event.runId, [event]);
+    }
+  }
+
+  return eventsByRun;
+}
+
+export function computeMetricsByRun(events: ToolCallEvent[]): Map<string, MetricsSummary> {
+  const metricsByRun = new Map<string, MetricsSummary>();
+
+  for (const [runId, runEvents] of groupEventsByRun(events)) {
+    metricsByRun.set(runId, computeMetrics(runEvents));
+  }
+
+  return metricsByRun;
+}

@@ -5,6 +5,7 @@ import {
   conversationFlows,
   type ConversationFlow,
   type ChatMessage,
+  type TraceEntry,
 } from "../lib/mockConversation";
 import { ConfirmationCard } from "./ConfirmationCard";
 import { ToolTracePanel } from "./ToolTracePanel";
@@ -12,6 +13,7 @@ import { ToolTracePanel } from "./ToolTracePanel";
 export function ChatApp() {
   const [activeFlow, setActiveFlow] = useState<ConversationFlow | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [visibleTrace, setVisibleTrace] = useState<TraceEntry[]>([]);
   const [confirmationResolved, setConfirmationResolved] = useState(false);
   const [traceExpanded, setTraceExpanded] = useState(false);
   const [inputValue, setInputValue] = useState("");
@@ -19,6 +21,7 @@ export function ChatApp() {
   function startFlow(flow: ConversationFlow) {
     setActiveFlow(flow);
     setMessages([...flow.messages]);
+    setVisibleTrace([...flow.preConfirmationTrace]);
     setConfirmationResolved(false);
   }
 
@@ -42,6 +45,12 @@ export function ChatApp() {
 
   function handleConfirm() {
     setConfirmationResolved(true);
+    if (activeFlow) {
+      setVisibleTrace((prev) => [
+        ...prev,
+        ...activeFlow.postConfirmationTrace,
+      ]);
+    }
     if (activeFlow?.afterConfirmMessage) {
       setMessages((prev) => [
         ...prev,
@@ -114,7 +123,7 @@ export function ChatApp() {
           </div>
         </div>
         <ToolTracePanel
-          entries={activeFlow?.trace ?? []}
+          entries={visibleTrace}
           expanded={traceExpanded}
           onToggle={() => setTraceExpanded((v) => !v)}
         />

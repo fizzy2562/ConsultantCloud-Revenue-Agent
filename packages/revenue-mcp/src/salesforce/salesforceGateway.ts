@@ -39,7 +39,11 @@ function meta(source: "salesforce" = "salesforce") {
 }
 
 function escapeSoql(value: string): string {
-  return value.replace(/'/g, "\\'");
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+function escapeSoqlLike(value: string): string {
+  return escapeSoql(value).replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
 export class SalesforceRevenueGateway implements RevenueGateway {
@@ -47,7 +51,7 @@ export class SalesforceRevenueGateway implements RevenueGateway {
 
   async findAccount(input: FindAccountInput): Promise<ToolResult<AccountSummary[]>> {
     try {
-      const escaped = escapeSoql(input.name);
+      const escaped = escapeSoqlLike(input.name);
       const records = await this.conn.query<{
         Id: string;
         Name: string;
@@ -77,8 +81,21 @@ export class SalesforceRevenueGateway implements RevenueGateway {
         accountId: input.accountId,
         assetType: "Active",
       });
-      if (!isSuccess || outputValues === null) {
+      if (outputValues === null) {
         return { ok: true, data: [], meta: meta() };
+      }
+      if (!isSuccess) {
+        return {
+          ok: false,
+          error: {
+            code: "SALESFORCE_ERROR",
+            message:
+              ((outputValues as { errorMessage?: string }).errorMessage as string) ??
+              "Failed to retrieve account assets",
+            retryable: true,
+          },
+          meta: meta(),
+        };
       }
       const assets = (outputValues as { accountAssets?: unknown[] }).accountAssets ?? [];
       const ids = assets
@@ -115,7 +132,7 @@ export class SalesforceRevenueGateway implements RevenueGateway {
     try {
       let soql = "SELECT Id, Name FROM Product2 WHERE IsActive = true";
       if (input.query.length > 0) {
-        const escaped = escapeSoql(input.query);
+        const escaped = escapeSoqlLike(input.query);
         soql += ` AND Name LIKE '%${escaped}%'`;
       }
       soql += " LIMIT 20";
@@ -153,6 +170,7 @@ export class SalesforceRevenueGateway implements RevenueGateway {
         `SELECT Id FROM Opportunity WHERE AccountId = '${escapeSoql(input.accountId)}' AND IsClosed = false LIMIT 1`
       );
       let opportunityId: string;
+      let createdOpportunity = false;
       const existingOpp = oppRecords.records[0];
       if (existingOpp) {
         opportunityId = existingOpp.Id;
@@ -171,12 +189,20 @@ export class SalesforceRevenueGateway implements RevenueGateway {
           CloseDate: closeDateStr,
         });
         opportunityId = created.id as string;
+        createdOpportunity = true;
       }
       const { isSuccess, outputValues } = await invokeFlowAction(this.conn, "quotingAI__createInitialQuoteOnOpp", {
         opportunityID: opportunityId,
       });
       const quoteId = (outputValues as { quoteId?: string } | null)?.quoteId;
       if (!isSuccess || !quoteId) {
+        if (createdOpportunity) {
+          try {
+            await this.conn.sobject("Opportunity").destroy(opportunityId);
+          } catch {
+            // Preserve the original quote-creation failure if cleanup also fails.
+          }
+        }
         return {
           ok: false,
           error: {
@@ -187,9 +213,29 @@ export class SalesforceRevenueGateway implements RevenueGateway {
           meta: meta(),
         };
       }
+      let quoteNumber: string | undefined;
+      try {
+        const quoteRecords = await this.conn.query<{ QuoteNumber: string }>(
+          `SELECT QuoteNumber FROM Quote WHERE Id = '${escapeSoql(quoteId)}'`
+        );
+        quoteNumber = quoteRecords.records[0]?.QuoteNumber;
+      } catch {
+        // Return the quote verification error below.
+      }
+      if (!quoteNumber) {
+        return {
+          ok: false,
+          error: {
+            code: "QUOTE_CREATION_FAILED",
+            message: "Quote created but could not be verified",
+            retryable: true,
+          },
+          meta: meta(),
+        };
+      }
       return {
         ok: true,
-        data: { quoteId, quoteNumber: quoteId, status: "Draft" },
+        data: { quoteId, quoteNumber, status: "Draft" },
         meta: meta(),
       };
     } catch (err) {
@@ -219,9 +265,10 @@ export class SalesforceRevenueGateway implements RevenueGateway {
           meta: meta(),
         };
       }
-      const renewalStartDate = new Date().toISOString();
-      const end = new Date();
-      end.setMonth(end.getMonth() + input.termMonths);
+      const start = new Date(`${input.effectiveDate}T00:00:00.000Z`);
+      const renewalStartDate = start.toISOString();
+      const end = new Date(start);
+      end.setUTCMonth(end.getUTCMonth() + input.termMonths);
       const renewalEndDate = end.toISOString();
       const { isSuccess, outputValues } = await invokeFlowAction(this.conn, "quotingAI__createRenewalQuote", {
         assetIds,
@@ -240,9 +287,29 @@ export class SalesforceRevenueGateway implements RevenueGateway {
           meta: meta(),
         };
       }
+      let quoteNumber: string | undefined;
+      try {
+        const quoteRecords = await this.conn.query<{ QuoteNumber: string }>(
+          `SELECT QuoteNumber FROM Quote WHERE Id = '${escapeSoql(renewalQuoteId)}'`
+        );
+        quoteNumber = quoteRecords.records[0]?.QuoteNumber;
+      } catch {
+        // Return the quote verification error below.
+      }
+      if (!quoteNumber) {
+        return {
+          ok: false,
+          error: {
+            code: "QUOTE_CREATION_FAILED",
+            message: "Quote created but could not be verified",
+            retryable: true,
+          },
+          meta: meta(),
+        };
+      }
       return {
         ok: true,
-        data: { quoteId: renewalQuoteId, quoteNumber: renewalQuoteId, status: "Draft" },
+        data: { quoteId: renewalQuoteId, quoteNumber, status: "Draft" },
         meta: meta(),
       };
     } catch (err) {
@@ -288,7 +355,18 @@ export class SalesforceRevenueGateway implements RevenueGateway {
       const lineRecords = await this.conn.query<{ Id: string }>(
         `SELECT Id FROM QuoteLineItem WHERE QuoteId = '${escapeSoql(input.quoteId)}' AND Product2Id = '${escapeSoql(input.productId)}' ORDER BY CreatedDate DESC LIMIT 1`
       );
-      const quoteLineId = lineRecords.records[0]?.Id ?? "";
+      const quoteLineId = lineRecords.records[0]?.Id;
+      if (!quoteLineId) {
+        return {
+          ok: false,
+          error: {
+            code: "ADD_LINE_FAILED",
+            message: "Line item was created but could not be located afterward",
+            retryable: true,
+          },
+          meta: meta(),
+        };
+      }
       return {
         ok: true,
         data: { quoteLineId, quoteId: input.quoteId, productId: input.productId, quantity: input.quantity },
@@ -377,7 +455,7 @@ export class SalesforceRevenueGateway implements RevenueGateway {
           quoteNumber: quote.QuoteNumber,
           accountId: quote.AccountId,
           status: quote.Status,
-          termMonths: 0,
+          termMonths: null,
           lines,
         },
         meta: meta(),

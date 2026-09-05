@@ -3,11 +3,13 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { registerReadTools } from "./tools/index.js";
 import { registerMutationTools } from "./tools/mutations.js";
 import { RevenueGateway, MockRevenueGateway } from "@consultantcloud/shared";
+import { EventLogger, FileEventSink } from "@consultantcloud/telemetry";
 
 export function createServer(gateway: RevenueGateway): McpServer {
   const server = new McpServer({ name: "consultantcloud-revenue-mcp", version: "0.1.0" });
-  registerReadTools(server, gateway);
-  registerMutationTools(server, gateway);
+  const logger = new EventLogger(new FileEventSink("./revenue-mcp-events.jsonl"));
+  registerReadTools(server, gateway, logger);
+  registerMutationTools(server, gateway, logger);
   return server;
 }
 

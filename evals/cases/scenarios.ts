@@ -41,6 +41,33 @@ class FailingGateway implements RevenueGateway {
   };
 }
 
+class ReturningFailureGateway implements RevenueGateway {
+  constructor(private readonly inner: MockRevenueGateway) {}
+
+  findAccount: RevenueGateway["findAccount"] = (input) => this.inner.findAccount(input);
+  getAccountAssets: RevenueGateway["getAccountAssets"] = (input) => this.inner.getAccountAssets(input);
+  searchProducts: RevenueGateway["searchProducts"] = (input) => this.inner.searchProducts(input);
+  createInitialQuote: RevenueGateway["createInitialQuote"] = (input) => this.inner.createInitialQuote(input);
+  createRenewalQuote: RevenueGateway["createRenewalQuote"] = (input) => this.inner.createRenewalQuote(input);
+  applyDiscount: RevenueGateway["applyDiscount"] = (input) => this.inner.applyDiscount(input);
+  getQuoteSummary: RevenueGateway["getQuoteSummary"] = (input) => this.inner.getQuoteSummary(input);
+
+  addQuoteLine: RevenueGateway["addQuoteLine"] = () =>
+    Promise.resolve({
+      ok: false,
+      error: {
+        code: "SALESFORCE_ERROR",
+        message: "Simulated Salesforce API timeout",
+        retryable: true,
+      },
+      meta: {
+        requestId: crypto.randomUUID(),
+        durationMs: 0,
+        source: "salesforce",
+      },
+    });
+}
+
 // E01
 const E01: EvalScenario = {
   id: "E01",
@@ -75,6 +102,17 @@ const E01: EvalScenario = {
     });
     if (!confirmed.ok || !confirmed.data.quoteId) {
       return { passed: false, notes: "renewal was not created after confirmation" };
+    }
+
+    const line = await callTool(client, "add_quote_line", {
+      quoteId: confirmed.data.quoteId,
+      productId: "01t000000000002AAA",
+      quantity: 250,
+      confirmedByUser: true,
+      idempotencyKey: "eval-e01-line",
+    });
+    if (line.ok !== true) {
+      return { passed: false, notes: "seat increase to 250 failed" };
     }
 
     return { passed: true, notes: `renewal quote ${confirmed.data.quoteId} created only after confirmation` };
@@ -325,7 +363,7 @@ const E07: EvalScenario = {
 // E08
 const E08: EvalScenario = {
   id: "E08",
-  name: "Salesforce failure",
+  name: "Salesforce failure (uncaught exception never fabricates success)",
   input: "(simulated) API timeout during add_quote_line.",
   async run(): Promise<EvalResult> {
     const gateway = new FailingGateway(new MockRevenueGateway());
@@ -358,6 +396,45 @@ const E08: EvalScenario = {
     }
 
     return { passed: true, notes: "gateway failure surfaced as a tool-call error, not a fabricated success" };
+  },
+};
+
+// E08b
+const E08b: EvalScenario = {
+  id: "E08b",
+  name: "Salesforce failure (caught API error returns retryable envelope)",
+  input: "(simulated) caught Salesforce API timeout during add_quote_line.",
+  async run(): Promise<EvalResult> {
+    const gateway = new ReturningFailureGateway(new MockRevenueGateway());
+    const client = await connectedClient(gateway);
+
+    const quote = await callTool(client, "create_renewal_quote", {
+      accountId: ACME_UNIVERSITY_ID,
+      termMonths: 36,
+      effectiveDate: "2026-10-01",
+      idempotencyKey: "eval-e08b-quote",
+      confirmedByUser: true,
+    });
+    if (!quote.ok || !quote.data.quoteId) {
+      return { passed: false, notes: "setup: renewal quote creation failed" };
+    }
+
+    const line = await callTool(client, "add_quote_line", {
+      quoteId: quote.data.quoteId,
+      productId: "01t000000000002AAA",
+      quantity: 250,
+      confirmedByUser: true,
+      idempotencyKey: "eval-e08b-line",
+    });
+
+    if (line.__mcpError === true) {
+      return { passed: false, notes: "caught Salesforce error surfaced as an MCP protocol error" };
+    }
+    if (line.ok !== false || line.error?.code !== "SALESFORCE_ERROR") {
+      return { passed: false, notes: "caught Salesforce error did not return the expected failure envelope" };
+    }
+
+    return { passed: true, notes: "caught Salesforce error returned a clear, retryable normal envelope" };
   },
 };
 
@@ -422,4 +499,4 @@ const E10: EvalScenario = {
   },
 };
 
-export const scenarios: EvalScenario[] = [E01, E02, E03, E04, E05, E06, E07, E08, E09, E10];
+export const scenarios: EvalScenario[] = [E01, E02, E03, E04, E05, E06, E07, E08, E08b, E09, E10];

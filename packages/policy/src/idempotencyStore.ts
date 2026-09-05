@@ -14,16 +14,43 @@ export class IdempotencyStore<T> {
   }
 }
 
+const inFlightByStore = new WeakMap<object, Map<string, Promise<unknown>>>();
+
 export async function withIdempotency<T>(
   store: IdempotencyStore<T>,
   key: string,
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
+  isCacheable: (result: T) => boolean = () => true
 ): Promise<T> {
   const existing = store.get(key);
   if (existing !== undefined) {
     return existing;
   }
-  const result = await fn();
-  store.set(key, result);
-  return result;
+
+  let inFlight = inFlightByStore.get(store);
+  if (!inFlight) {
+    inFlight = new Map<string, Promise<unknown>>();
+    inFlightByStore.set(store, inFlight);
+  }
+
+  const normalizedKey = key.trim();
+  const pending = inFlight.get(normalizedKey) as Promise<T> | undefined;
+  if (pending) {
+    return pending;
+  }
+
+  const operation = Promise.resolve()
+    .then(fn)
+    .then((result) => {
+      if (isCacheable(result)) {
+        store.set(normalizedKey, result);
+      }
+      return result;
+    })
+    .finally(() => {
+      inFlight?.delete(normalizedKey);
+    });
+
+  inFlight.set(normalizedKey, operation);
+  return operation;
 }

@@ -94,6 +94,9 @@ importers:
       '@consultantcloud/shared':
         specifier: workspace:*
         version: link:../shared
+      '@consultantcloud/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.0
         version: 1.30.0(supports-color@7.2.0)(zod@3.25.76)

@@ -21,7 +21,7 @@ export function ToolResultSchema<T extends z.ZodTypeAny>(dataSchema: T) {
 
 export const FindAccountInputSchema = z
   .object({
-    name: z.string(),
+    name: z.string().min(1),
   })
   .strict();
 
@@ -36,7 +36,7 @@ export const FindAccountOutputSchema = z.array(AccountSummarySchema);
 
 export const AccountIdInputSchema = z
   .object({
-    accountId: z.string(),
+    accountId: z.string().min(1),
   })
   .strict();
 
@@ -65,7 +65,7 @@ export const ProductSearchOutputSchema = z.array(ProductSummarySchema);
 
 export const QuoteIdInputSchema = z
   .object({
-    quoteId: z.string(),
+    quoteId: z.string().min(1),
   })
   .strict();
 
@@ -81,13 +81,13 @@ export const QuoteSummarySchema = z.object({
   quoteNumber: z.string(),
   accountId: z.string(),
   status: z.string(),
-  termMonths: z.number().int().positive(),
+  termMonths: z.number().int().positive().nullable(),
   lines: z.array(QuoteLineSummarySchema),
 });
 
 export const CreateInitialQuoteInputSchema = z
   .object({
-    accountId: z.string(),
+    accountId: z.string().min(1),
     termMonths: z.number().int().positive(),
     idempotencyKey: z.string().min(1),
     confirmedByUser: z.boolean(),
@@ -96,32 +96,32 @@ export const CreateInitialQuoteInputSchema = z
 
 export const CreateRenewalQuoteInputSchema = z
   .object({
-    accountId: z.string(),
+    accountId: z.string().min(1),
     termMonths: z.number().int().positive(),
-    effectiveDate: z.string(),
+    effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "effectiveDate must be YYYY-MM-DD"),
     idempotencyKey: z.string().min(1),
     confirmedByUser: z.boolean(),
   })
   .strict();
 
 export const QuoteResultSchema = z.object({
-  quoteId: z.string(),
-  quoteNumber: z.string(),
+  quoteId: z.string().min(1),
+  quoteNumber: z.string().min(1),
   status: z.string(),
 });
 
 export const AddQuoteLineInputSchema = z
   .object({
-    quoteId: z.string(),
-    productId: z.string(),
-    quantity: z.number(),
+    quoteId: z.string().min(1),
+    productId: z.string().min(1),
+    quantity: z.number().int().positive(),
     idempotencyKey: z.string().min(1),
     confirmedByUser: z.boolean(),
   })
   .strict();
 
 export const QuoteLineResultSchema = z.object({
-  quoteLineId: z.string(),
+  quoteLineId: z.string().min(1),
   quoteId: z.string(),
   productId: z.string(),
   quantity: z.number(),
@@ -129,8 +129,8 @@ export const QuoteLineResultSchema = z.object({
 
 export const ApplyDiscountInputSchema = z
   .object({
-    quoteId: z.string(),
-    quoteLineId: z.string(),
+    quoteId: z.string().min(1),
+    quoteLineId: z.string().min(1),
     discountPercent: z.number().min(0).max(100),
     idempotencyKey: z.string().min(1),
     confirmedByUser: z.boolean(),

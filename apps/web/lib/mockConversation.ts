@@ -11,7 +11,8 @@ export type ConversationFlow = {
   id: string;
   starterPrompt: string;
   messages: ChatMessage[];
-  trace: TraceEntry[];
+  preConfirmationTrace: TraceEntry[];
+  postConfirmationTrace: TraceEntry[];
   confirmation: ConfirmationCardData | null;
   afterConfirmMessage: string | null;
 };
@@ -27,10 +28,12 @@ export const conversationFlows: ConversationFlow[] = [
         text: "I found Acme University. They currently have 100 Cloud Pro seats. I can propose a renewal for 250 Cloud Pro seats over a 36-month term, and their existing 12% discount will be preserved.",
       },
     ],
-    trace: [
+    preConfirmationTrace: [
       { tool: "find_account", badge: "READ", durationMs: 110, blocked: false, summary: "Acme University found" },
       { tool: "get_account_assets", badge: "READ", durationMs: 180, blocked: false, summary: "Existing 100 Cloud Pro seats found" },
       { tool: "search_products", badge: "READ", durationMs: 90, blocked: false, summary: "Cloud Pro located" },
+    ],
+    postConfirmationTrace: [
       { tool: "create_renewal_quote", badge: "WRITE", durationMs: 480, blocked: false, summary: "Quote Q-10452 created" },
     ],
     confirmation: {
@@ -51,9 +54,11 @@ export const conversationFlows: ConversationFlow[] = [
         text: "I found Greenfield Health. They are a new customer with no existing assets. I can create an initial quote for 75 Cloud Pro seats.",
       },
     ],
-    trace: [
+    preConfirmationTrace: [
       { tool: "find_account", badge: "READ", durationMs: 105, blocked: false, summary: "Greenfield Health found" },
       { tool: "search_products", badge: "READ", durationMs: 95, blocked: false, summary: "Cloud Pro located" },
+    ],
+    postConfirmationTrace: [
       { tool: "create_initial_quote", badge: "WRITE", durationMs: 460, blocked: false, summary: "Quote Q-10453 created" },
     ],
     confirmation: {
@@ -74,10 +79,11 @@ export const conversationFlows: ConversationFlow[] = [
         text: "I found Acme University. A 20% discount exceeds the 15% self-serve threshold, so it requires manager approval before it can be applied.",
       },
     ],
-    trace: [
+    preConfirmationTrace: [
       { tool: "find_account", badge: "READ", durationMs: 100, blocked: false, summary: "Acme University found" },
       { tool: "apply_discount", badge: "GATE", durationMs: 5, blocked: true, summary: "Manager approval required" },
     ],
+    postConfirmationTrace: [],
     confirmation: {
       title: "Manager approval required",
       lines: ["Account: Acme University", "Requested discount: 20%", "Policy threshold: 15% (self-serve)"],
@@ -96,10 +102,11 @@ export const conversationFlows: ConversationFlow[] = [
         text: "I found Acme University. A 30% discount exceeds the maximum permitted discount of 25% and has been rejected outright. No approval path exists for this amount.",
       },
     ],
-    trace: [
+    preConfirmationTrace: [
       { tool: "find_account", badge: "READ", durationMs: 98, blocked: false, summary: "Acme University found" },
       { tool: "apply_discount", badge: "GATE", durationMs: 4, blocked: true, summary: "Rejected: exceeds 25% maximum" },
     ],
+    postConfirmationTrace: [],
     confirmation: null,
     afterConfirmMessage: null,
   },
