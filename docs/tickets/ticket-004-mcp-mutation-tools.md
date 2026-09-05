@@ -1,7 +1,15 @@
 # Ticket 004 — Revenue MCP mutation tools (against the mock, gated by policy)
 
-Status: NOT_STARTED
+Status: DONE
 Depends on: ticket-001 (contracts + mock gateway), ticket-002 (policy engine), ticket-003 (server scaffold + read tools pattern)
+
+## Review notes
+
+Resolved one design ambiguity ticket-002 flagged explicitly: `MockRevenueGateway` already idempotency-guards quote creation internally, so does the MCP tool layer need to *also* wrap with `packages/policy`'s `withIdempotency`? Yes — the acceptance test asserts the gateway method was called exactly once via `vi.spyOn`, which only holds if the outer (tool-layer) idempotency check short-circuits before the gateway method is invoked a second time; the gateway's own internal short-circuit still counts as an invocation to a spy. So idempotency is layered at the tool boundary for all four mutation tools, uniformly.
+
+Qwen's generated code (tool registrations + confirmation/discount gating logic) was correct on the first attempt, including never hardcoding the 15/25 thresholds. Two real defects were in my own test brief, not Qwen's output, and were fixed directly: (1) `apply_discount` test calls omitted the required `quoteLineId` field, causing the SDK's own schema validation to reject the call before it reached our handler; (2) `server.test.ts`'s tool-list assertion predates this ticket and needed updating from 5 to all 9 tools now that mutations are registered on the same server.
+
+Verified: `pnpm -r build` and `pnpm -r test` green across the whole workspace, 27 tests total. Mutation tests directly preview eval scenarios E01, E02, E03, E04, and E07 from PROJECT_SPEC.md Section 12.
 
 ## Goal
 

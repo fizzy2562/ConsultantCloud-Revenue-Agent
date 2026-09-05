@@ -29,6 +29,9 @@ importers:
 
   packages/revenue-mcp:
     dependencies:
+      '@consultantcloud/policy':
+        specifier: workspace:*
+        version: link:../policy
       '@consultantcloud/shared':
         specifier: workspace:*
         version: link:../shared

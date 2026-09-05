@@ -1,11 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { registerReadTools } from "./tools/index.js";
+import { registerMutationTools } from "./tools/mutations.js";
 import { RevenueGateway, MockRevenueGateway } from "@consultantcloud/shared";
 
 export function createServer(gateway: RevenueGateway): McpServer {
   const server = new McpServer({ name: "consultantcloud-revenue-mcp", version: "0.1.0" });
   registerReadTools(server, gateway);
+  registerMutationTools(server, gateway);
   return server;
 }
 

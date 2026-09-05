@@ -20,12 +20,22 @@ async function connectedClient() {
 }
 
 describe("Revenue MCP server", () => {
-  it("lists exactly the five read tools", async () => {
+  it("lists all read and mutation tools", async () => {
     const client = await connectedClient();
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
-      ["find_account", "get_account_assets", "get_account_revenue_context", "get_quote_summary", "search_products"].sort()
+      [
+        "find_account",
+        "get_account_assets",
+        "get_account_revenue_context",
+        "get_quote_summary",
+        "search_products",
+        "create_initial_quote",
+        "create_renewal_quote",
+        "add_quote_line",
+        "apply_discount",
+      ].sort()
     );
   });
 
