@@ -1,7 +1,11 @@
 # Ticket 002 — Policy / guardrail engine
 
-Status: NOT_STARTED
+Status: DONE
 Depends on: ticket-001 (shared contracts must be merged first)
+
+## Review notes
+
+Generated via `scripts/qwen.mjs` per file, all four dispatches (discountPolicy, protectedMutations, idempotencyStore, tests) came back correct on the first try — no defect rounds needed. `confirmationToken.ts` was scoped out: `requireConfirmation` in `protectedMutations.ts` already covers the stateless confirmation check the ticket describes, and a separate file would just duplicate it. Verified: `pnpm -r build` green, `pnpm --filter policy test` 11/11 passing.
 
 ## Goal
 
