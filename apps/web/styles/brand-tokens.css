@@ -1,0 +1,5 @@
+:root {
+  --cc-blue: #3d7fab;
+  --cc-green: #51ac52;
+  --cc-gradient: linear-gradient(135deg, var(--cc-blue), var(--cc-green));
+}

@@ -1,7 +1,21 @@
 # Ticket 005 — Headless UI against mocked tool responses
 
-Status: NOT_STARTED
+Status: DONE
 Depends on: ticket-001 (shared types), ticket-003/004 (tool response shapes to mock against — but this ticket does NOT call the real MCP server; it mocks tool responses directly in the UI layer for independent development)
+
+## Review notes
+
+Built as a real Next.js 16 / React 19 app (App Router), not a static mockup — `next build` succeeds, producing an actual static-optimized production build. Four canned conversation flows implemented (one per starter prompt, exceeding the ticket's "at least 3") — Qwen matched the exact required starter-prompt wording and confirmation-card content precisely, and correctly set `confirmation: null` for the 30% rejection flow without being reminded twice.
+
+The hard requirement ("confirmation must never be buried in chat text") is proven with an automated test, not just eyeballed: `ChatApp.test.tsx` uses React Testing Library to assert `getByRole("alert")` exists for the renewal flow and is completely absent (`queryByRole("alert")` is `null`) for the 30% rejection flow.
+
+Placeholder logo asset (`consultantcloud-logo.svg`) is a simple generated cloud mark using the two brand colors — the real supplied asset from PROJECT_SPEC.md doesn't exist in this repo; flagging per the ticket's own instruction rather than inventing something that could be mistaken for a final brand asset.
+
+Two infrastructure issues found and fixed directly (not Qwen defects — both are test-harness configuration, not component logic): a stray `.cc-trace-blocked` CSS class the trace panel used but the stylesheet brief hadn't defined (added one rule); and `vitest.config.ts` needed `globals: true` for React Testing Library's automatic per-test DOM cleanup to register — without it, sequential tests accumulated DOM nodes from prior renders and produced false "multiple elements found" failures.
+
+What's still just eyeballed, not automated: pixel-level responsive behavior at the 900px breakpoint and general visual polish — no browser was driven in this pipeline. `pnpm --filter web dev` should be run manually to confirm before treating this as demo-ready.
+
+Verified: `next build` succeeds (static generation of `/`), `pnpm --filter web test` 3/3 passing, full workspace 34 tests passing.
 
 ## Goal
 
