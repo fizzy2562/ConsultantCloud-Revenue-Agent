@@ -14,7 +14,7 @@ Status against PROJECT_SPEC.md Section 13's checklist, as of this build:
 | Idempotency for writes | ✅ All four mutation tools wrapped in `withIdempotency`; verified under real concurrent calls (not just sequential), see ticket 009 probe 4. |
 | Deterministic policy engine | ✅ `packages/policy` — discount thresholds and protected-mutation rules are data/pure functions, never in a prompt. |
 | Confirmation token for writes | ✅ `confirmedByUser: true` required and checked before any protected mutation reaches the gateway; verified type confusion (string `"true"`) is rejected, not coerced. |
-| Secrets scanning in CI | ⚠️ Manually scanned (grep for key/token patterns, verified `.env` never tracked). No automated CI step configured yet — recommended before `v0.1.0` tag. |
+| Secrets scanning in CI | ✅ `.github/workflows/ci.yml` runs gitleaks on every push/PR to `main`, alongside build/test/evals/`pnpm audit`. |
 | Dependency audit | ✅ `pnpm audit` run — found 1 critical, 1 high, 3 moderate, all in `vitest`'s transitive `vite`/`esbuild` (dev/test tooling only, never shipped). Fixed by bumping `vitest` to `^3.2.6` (patches the critical) plus a `vite: '>=6.4.3'` override in `pnpm-workspace.yaml` (patches the rest). `pnpm audit` now reports zero known vulnerabilities. |
 | No production customer data | ✅ Demo data (Acme University, Greenfield Health) is entirely fictional. |
 
