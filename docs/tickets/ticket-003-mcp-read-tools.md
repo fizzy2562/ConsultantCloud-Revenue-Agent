@@ -1,7 +1,17 @@
 # Ticket 003 — Revenue MCP server + read tools (against the mock)
 
-Status: NOT_STARTED
+Status: DONE
 Depends on: ticket-001 (shared contracts + MockRevenueGateway)
+
+## Review notes
+
+Uses the real `@modelcontextprotocol/sdk` (not an internal facsimile) — confirmed via the org's actual installed type definitions before briefing Qwen, since a fast-moving SDK's exact API (`registerTool` vs deprecated `tool()`, `ZodRawShapeCompat`, etc.) isn't something a model can be expected to know precisely. Gave Qwen one fully-worked tool registration as a pattern to replicate for the other four; all five came back correct on the first attempt, including full 5-point tool descriptions.
+
+Deviated from the ticket's file list: all 5 read tools live in one `tools/index.ts` rather than 5 separate files — they're structurally identical thin wrappers needing the same SDK knowledge, so splitting them multiplies chances of a subtle generic-typing slip without adding real value. `packages/shared/src/index.ts` (a barrel file) was added since it didn't exist yet and tools needed a stable package-level import rather than deep subpaths.
+
+Several SDK-typing issues surfaced only at `tsc` time and were fixed directly rather than round-tripped, since they were forced by the type system / correct third-party API usage, not business-logic decisions: missing `@types/node` for the `process` global, `client.callTool()`'s return type needing `CallToolResultSchema` passed explicitly plus a local type assertion (the SDK's inferred type didn't narrow as its own `.d.ts` suggested it should), and `noUncheckedIndexedAccess` guards on `content[0]`.
+
+Verified: `pnpm -r build` green, `pnpm --filter revenue-mcp test` 4/4 passing — including `tools/list` returning exactly the 5 expected tools over a real in-memory MCP client/server pair, not a mock of the protocol.
 
 ## Goal
 
