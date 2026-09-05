@@ -135,7 +135,9 @@ export class MockRevenueGateway implements RevenueGateway {
         meta: this.meta(),
       };
     }
-    const netPrice = input.quantity * product.listPrice;
+    // listPrice is only nullable for the real Salesforce gateway (missing price-book entry);
+    // every fixture product here always has one.
+    const netPrice = input.quantity * (product.listPrice as number);
     const quoteLineId = `a0L${crypto.randomUUID()}`;
     this.lineCounter += 1;
     const line: StoredQuoteLine = {
@@ -177,7 +179,8 @@ export class MockRevenueGateway implements RevenueGateway {
       };
     }
     const product = products.find((p) => p.name === line.productName);
-    const listPrice = product ? product.listPrice : 0;
+    // listPrice is only nullable for the real Salesforce gateway; every fixture product here always has one.
+    const listPrice = product ? (product.listPrice as number) : 0;
     line.discountPercent = input.discountPercent;
     line.netPrice = line.quantity * listPrice * (1 - input.discountPercent / 100);
     return {

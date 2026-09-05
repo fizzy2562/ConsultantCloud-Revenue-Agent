@@ -81,9 +81,6 @@ export class SalesforceRevenueGateway implements RevenueGateway {
         accountId: input.accountId,
         assetType: "Active",
       });
-      if (outputValues === null) {
-        return { ok: true, data: [], meta: meta() };
-      }
       if (!isSuccess) {
         return {
           ok: false,
@@ -96,6 +93,9 @@ export class SalesforceRevenueGateway implements RevenueGateway {
           },
           meta: meta(),
         };
+      }
+      if (outputValues === null) {
+        return { ok: true, data: [], meta: meta() };
       }
       const assets = (outputValues as { accountAssets?: unknown[] }).accountAssets ?? [];
       const ids = assets
@@ -114,9 +114,9 @@ export class SalesforceRevenueGateway implements RevenueGateway {
       }>(`SELECT Id, Name, Quantity, Status, Product2.Name FROM Asset WHERE Id IN (${idList})`);
       const data: AccountAsset[] = records.records.map((record) => ({
         id: record.Id,
-        productName: record.Product2?.Name ?? "Unknown Product",
-        quantity: record.Quantity ?? 0,
-        status: record.Status ?? "Unknown",
+        productName: record.Product2?.Name ?? null,
+        quantity: record.Quantity ?? null,
+        status: record.Status ?? null,
       }));
       return { ok: true, data, meta: meta() };
     } catch (err) {
@@ -152,7 +152,7 @@ export class SalesforceRevenueGateway implements RevenueGateway {
       const data: ProductSummary[] = products.records.map((p) => ({
         id: p.Id,
         name: p.Name,
-        listPrice: priceMap.get(p.Id) ?? 0,
+        listPrice: priceMap.get(p.Id) ?? null,
       }));
       return { ok: true, data, meta: meta() };
     } catch (err) {
@@ -191,9 +191,22 @@ export class SalesforceRevenueGateway implements RevenueGateway {
         opportunityId = created.id as string;
         createdOpportunity = true;
       }
-      const { isSuccess, outputValues } = await invokeFlowAction(this.conn, "quotingAI__createInitialQuoteOnOpp", {
-        opportunityID: opportunityId,
-      });
+      let actionResult: Awaited<ReturnType<typeof invokeFlowAction>>;
+      try {
+        actionResult = await invokeFlowAction(this.conn, "quotingAI__createInitialQuoteOnOpp", {
+          opportunityID: opportunityId,
+        });
+      } catch (err) {
+        if (createdOpportunity) {
+          try {
+            await this.conn.sobject("Opportunity").destroy(opportunityId);
+          } catch {
+            // Preserve the original quote-creation failure if cleanup also fails.
+          }
+        }
+        throw err;
+      }
+      const { isSuccess, outputValues } = actionResult;
       const quoteId = (outputValues as { quoteId?: string } | null)?.quoteId;
       if (!isSuccess || !quoteId) {
         if (createdOpportunity) {
@@ -214,15 +227,17 @@ export class SalesforceRevenueGateway implements RevenueGateway {
         };
       }
       let quoteNumber: string | undefined;
+      let quoteStatus: string | undefined;
       try {
-        const quoteRecords = await this.conn.query<{ QuoteNumber: string }>(
-          `SELECT QuoteNumber FROM Quote WHERE Id = '${escapeSoql(quoteId)}'`
+        const quoteRecords = await this.conn.query<{ QuoteNumber: string; Status: string }>(
+          `SELECT QuoteNumber, Status FROM Quote WHERE Id = '${escapeSoql(quoteId)}'`
         );
         quoteNumber = quoteRecords.records[0]?.QuoteNumber;
+        quoteStatus = quoteRecords.records[0]?.Status;
       } catch {
         // Return the quote verification error below.
       }
-      if (!quoteNumber) {
+      if (!quoteNumber || !quoteStatus) {
         return {
           ok: false,
           error: {
@@ -235,7 +250,7 @@ export class SalesforceRevenueGateway implements RevenueGateway {
       }
       return {
         ok: true,
-        data: { quoteId, quoteNumber, status: "Draft" },
+        data: { quoteId, quoteNumber, status: quoteStatus },
         meta: meta(),
       };
     } catch (err) {
@@ -288,15 +303,17 @@ export class SalesforceRevenueGateway implements RevenueGateway {
         };
       }
       let quoteNumber: string | undefined;
+      let quoteStatus: string | undefined;
       try {
-        const quoteRecords = await this.conn.query<{ QuoteNumber: string }>(
-          `SELECT QuoteNumber FROM Quote WHERE Id = '${escapeSoql(renewalQuoteId)}'`
+        const quoteRecords = await this.conn.query<{ QuoteNumber: string; Status: string }>(
+          `SELECT QuoteNumber, Status FROM Quote WHERE Id = '${escapeSoql(renewalQuoteId)}'`
         );
         quoteNumber = quoteRecords.records[0]?.QuoteNumber;
+        quoteStatus = quoteRecords.records[0]?.Status;
       } catch {
         // Return the quote verification error below.
       }
-      if (!quoteNumber) {
+      if (!quoteNumber || !quoteStatus) {
         return {
           ok: false,
           error: {
@@ -309,7 +326,7 @@ export class SalesforceRevenueGateway implements RevenueGateway {
       }
       return {
         ok: true,
-        data: { quoteId: renewalQuoteId, quoteNumber, status: "Draft" },
+        data: { quoteId: renewalQuoteId, quoteNumber, status: quoteStatus },
         meta: meta(),
       };
     } catch (err) {

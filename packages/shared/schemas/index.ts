@@ -42,9 +42,9 @@ export const AccountIdInputSchema = z
 
 export const AccountAssetSchema = z.object({
   id: z.string(),
-  productName: z.string(),
-  quantity: z.number(),
-  status: z.string(),
+  productName: z.string().nullable(),
+  quantity: z.number().nullable(),
+  status: z.string().nullable(),
 });
 
 export const AccountAssetsOutputSchema = z.array(AccountAssetSchema);
@@ -58,7 +58,7 @@ export const ProductSearchInputSchema = z
 export const ProductSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
-  listPrice: z.number(),
+  listPrice: z.number().nullable(),
 });
 
 export const ProductSearchOutputSchema = z.array(ProductSummarySchema);

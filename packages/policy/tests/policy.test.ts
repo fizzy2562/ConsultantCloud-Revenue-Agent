@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { evaluateDiscount } from "../src/discountPolicy.js";
 import { requireConfirmation } from "../src/protectedMutations.js";
-import { IdempotencyStore, withIdempotency } from "../src/idempotencyStore.js";
+import { IdempotencyConflictError, IdempotencyStore, withIdempotency } from "../src/idempotencyStore.js";
 
 describe("evaluateDiscount", () => {
   it("permits a 12% discount", () => {
@@ -63,10 +63,18 @@ describe("withIdempotency", () => {
       return counter;
     });
 
-    const first = await withIdempotency(store, "key-1", fn);
-    const second = await withIdempotency(store, "key-1", fn);
+    const first = await withIdempotency(store, "key-1", "fp-1", fn);
+    const second = await withIdempotency(store, "key-1", "fp-1", fn);
 
     expect(fn).toHaveBeenCalledTimes(1);
     expect(first).toBe(second);
+  });
+
+  it("rejects a repeated key with a different payload fingerprint", async () => {
+    const store = new IdempotencyStore<number>();
+
+    await withIdempotency(store, "key-1", "fp-1", async () => 1);
+
+    await expect(withIdempotency(store, "key-1", "fp-2", async () => 2)).rejects.toBeInstanceOf(IdempotencyConflictError);
   });
 });
