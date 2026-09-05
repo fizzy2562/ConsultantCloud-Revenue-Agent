@@ -1,6 +1,7 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+  - 'evals'
 allowBuilds:
   core-js: true
   core-js-pure: true
