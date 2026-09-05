@@ -1,7 +1,13 @@
 # Ticket 006 — Execution trace / observability
 
-Status: NOT_STARTED
+Status: DONE
 Depends on: ticket-001 (shared types)
+
+## Review notes
+
+All three source files (event schema, logger, metrics) and the test file came back correct on the first attempt. For the metrics test fixture, I hand-computed the expected values myself (successfulTaskRate 0.6, averageToolLatencyMs 120, endToEndDurationMs 9000, etc.) rather than trusting the model's arithmetic, and had Qwen transcribe the fixture verbatim rather than invent its own numbers — it did so exactly, no alterations. One mechanical fix applied directly: `noUncheckedIndexedAccess` required an optional-chain on `events[0]` in the logger round-trip test.
+
+Verified: `pnpm -r build` and `pnpm -r test` green across the whole workspace — 31 tests total (6 shared, 11 policy, 10 revenue-mcp, 4 telemetry).
 
 ## Goal
 
