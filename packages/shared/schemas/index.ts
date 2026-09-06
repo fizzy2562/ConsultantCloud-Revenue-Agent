@@ -72,10 +72,10 @@ export const QuoteIdInputSchema = z
   .strict();
 
 export const QuoteLineSummarySchema = z.object({
-  productName: z.string(),
-  quantity: z.number(),
-  discountPercent: z.number().min(0).max(100),
-  netPrice: z.number(),
+  productName: z.string().nullable(),
+  quantity: z.number().nullable(),
+  discountPercent: z.number().min(0).max(100).nullable(),
+  netPrice: z.number().nullable(),
 });
 
 export const QuoteSummarySchema = z.object({

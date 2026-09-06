@@ -465,10 +465,10 @@ export class SalesforceRevenueGateway implements RevenueGateway {
         TotalPrice: number | null;
       }>(`SELECT Product2.Name, Quantity, Discount, TotalPrice FROM QuoteLineItem WHERE QuoteId = '${escapeSoql(input.quoteId)}'`);
       const lines = lineRecords.records.map((l) => ({
-        productName: l.Product2?.Name ?? "Unknown Product",
-        quantity: l.Quantity ?? 0,
-        discountPercent: l.Discount ?? 0,
-        netPrice: l.TotalPrice ?? 0,
+        productName: l.Product2?.Name ?? null,
+        quantity: l.Quantity ?? null,
+        discountPercent: l.Discount ?? null,
+        netPrice: l.TotalPrice ?? null,
       }));
       return {
         ok: true,
