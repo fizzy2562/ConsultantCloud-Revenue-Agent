@@ -57,12 +57,14 @@ const MUTATION_TOOLS = new Set([
   "create_initial_quote",
   "create_renewal_quote",
   "add_quote_line",
+  "remove_quote_line",
+  "update_quote_line",
   "apply_discount",
 ]);
 
 const SYSTEM_PROMPT = `You are a commercial assistant for Salesforce Revenue Management requests involving quotes, renewals, quote line items, and discounts.
 Use the available tools to retrieve facts and perform requested work. Always resolve an account by name with find_account before calling any tool that needs an accountId. Use get_account_revenue_context and get_account_assets for account context, search_products to resolve products, and get_quote_summary to inspect a quote.
-When the user's request requires creating a quote, adding a line item, or applying a discount, call that tool directly with the real arguments you intend — you do not need to ask the user for permission yourself; a separate confirmation step outside your control handles that. Never invent an account ID, product ID, quote ID, or price — only use values you got from a tool result.`;
+When the user's request requires creating a quote, adding or removing a line item, updating a line item's quantity, or applying a discount, call that tool directly with the real arguments you intend — you do not need to ask the user for permission yourself; a separate confirmation step outside your control handles that. Never invent an account ID, product ID, quote ID, quote line ID, or price — only use values you got from a tool result.`;
 
 async function connectedClient(gateway: RevenueGateway, options: AgentRuntimeOptions) {
   const server = createServer(gateway, { runId: options.runId });
@@ -108,6 +110,10 @@ async function confirmationFor(
       return { toolName, args, summary: { title: "Ready to create renewal quote", lines: [`Account: ${account()}`, `Term: ${display(args.termMonths)} months`, `Effective date: ${display(args.effectiveDate)}`], confirmLabel: "Create renewal", cancelLabel: "Cancel" } };
     case "add_quote_line":
       return { toolName, args, summary: { title: "Ready to add quote line", lines: [`Quote: ${quote()}`, `Product: ${product()}`, `Quantity: ${display(args.quantity)}`], confirmLabel: "Add line item", cancelLabel: "Cancel" } };
+    case "remove_quote_line":
+      return { toolName, args, summary: { title: "Ready to remove quote line", lines: [`Quote line: ${display(args.quoteLineId)}`], confirmLabel: "Remove line item", cancelLabel: "Cancel" } };
+    case "update_quote_line":
+      return { toolName, args, summary: { title: "Ready to update quote line quantity", lines: [`Quote line: ${display(args.quoteLineId)}`, `New quantity: ${display(args.quantity)}`], confirmLabel: "Update quantity", cancelLabel: "Cancel" } };
     case "apply_discount":
       return { toolName, args, summary: { title: "Ready to apply discount", lines: [`Quote: ${quote()}`, `Quote line: ${display(args.quoteLineId)}`, `Discount: ${display(args.discountPercent)}%`], confirmLabel: "Apply discount", cancelLabel: "Cancel", ...(evaluateDiscount(args.discountPercent as number).decision === "approval_required" ? { requiresApproverName: true } : {}) } };
     default:
@@ -135,6 +141,8 @@ function resultSummary(tool: string, result: ToolEnvelope): string {
   if (tool === "get_quote_summary") return `Quote ${display(!Array.isArray(data) && data?.quoteNumber)} retrieved`;
   if (tool === "create_initial_quote" || tool === "create_renewal_quote") return `Quote ${display(!Array.isArray(data) && data?.quoteNumber)} created`;
   if (tool === "add_quote_line") return `Quote line ${display(!Array.isArray(data) && data?.quoteLineId)} added`;
+  if (tool === "remove_quote_line") return `Quote line ${display(!Array.isArray(data) && data?.quoteLineId)} removed`;
+  if (tool === "update_quote_line") return `Quote line ${display(!Array.isArray(data) && data?.quoteLineId)} updated to quantity ${display(!Array.isArray(data) && data?.quantity)}`;
   if (tool === "apply_discount") return `${display(!Array.isArray(data) && data?.appliedDiscountPercent)}% discount applied`;
   return `${tool} completed`;
 }

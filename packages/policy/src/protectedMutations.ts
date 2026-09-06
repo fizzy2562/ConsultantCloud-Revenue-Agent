@@ -3,6 +3,8 @@ export type MutationAction =
   | "create_renewal_quote"
   | "submit_quote"
   | "create_amendment_quote"
+  | "remove_quote_line"
+  | "update_quote_line"
   | "apply_discount";
 
 export function isProtectedMutation(
@@ -13,7 +15,9 @@ export function isProtectedMutation(
     action === "create_initial_quote" ||
     action === "create_renewal_quote" ||
     action === "submit_quote" ||
-    action === "create_amendment_quote"
+    action === "create_amendment_quote" ||
+    action === "remove_quote_line" ||
+    action === "update_quote_line"
   ) {
     return true;
   }

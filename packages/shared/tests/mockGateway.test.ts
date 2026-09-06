@@ -49,6 +49,32 @@ describe("MockRevenueGateway", () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.data.quoteId).toBe("a0Q000000000001AAA");
   });
+
+  it("removes an existing quote line", async () => {
+    const gateway = new MockRevenueGateway();
+    const result = await gateway.removeQuoteLine({ quoteLineId: "a0L000000000001AAA", idempotencyKey: "remove-1", confirmedByUser: true });
+    expect(result).toMatchObject({ ok: true, data: { quoteLineId: "a0L000000000001AAA", removed: true } });
+    const summary = await gateway.getQuoteSummary({ quoteId: "a0Q000000000001AAA" });
+    expect(summary.ok && summary.data.lines).toHaveLength(0);
+  });
+
+  it("returns NOT_FOUND when removing a missing quote line", async () => {
+    const result = await new MockRevenueGateway().removeQuoteLine({ quoteLineId: "missing", idempotencyKey: "remove-2", confirmedByUser: true });
+    expect(result).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+  });
+
+  it("updates quantity and recomputes net price while preserving the discount", async () => {
+    const gateway = new MockRevenueGateway();
+    const result = await gateway.updateQuoteLine({ quoteLineId: "a0L000000000001AAA", quantity: 2, idempotencyKey: "update-1", confirmedByUser: true });
+    expect(result).toMatchObject({ ok: true, data: { quoteLineId: "a0L000000000001AAA", quantity: 2 } });
+    const summary = await gateway.getQuoteSummary({ quoteId: "a0Q000000000001AAA" });
+    expect(summary.ok && summary.data.lines[0]).toMatchObject({ quantity: 2, discountPercent: 12, netPrice: 4224 });
+  });
+
+  it("returns NOT_FOUND when updating a missing quote line", async () => {
+    const result = await new MockRevenueGateway().updateQuoteLine({ quoteLineId: "missing", quantity: 2, idempotencyKey: "update-2", confirmedByUser: true });
+    expect(result).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+  });
 });
 
 describe("ToolResultSchema", () => {

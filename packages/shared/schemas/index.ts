@@ -130,6 +130,33 @@ export const QuoteLineResultSchema = z.object({
   quantity: z.number(),
 });
 
+export const RemoveQuoteLineInputSchema = z
+  .object({
+    quoteLineId: z.string().min(1),
+    idempotencyKey: z.string().min(1),
+    confirmedByUser: z.boolean(),
+  })
+  .strict();
+
+export const RemoveQuoteLineResultSchema = z.object({
+  quoteLineId: z.string().min(1),
+  removed: z.literal(true),
+});
+
+export const UpdateQuoteLineInputSchema = z
+  .object({
+    quoteLineId: z.string().min(1),
+    quantity: z.number().int().positive(),
+    idempotencyKey: z.string().min(1),
+    confirmedByUser: z.boolean(),
+  })
+  .strict();
+
+export const UpdateQuoteLineResultSchema = z.object({
+  quoteLineId: z.string().min(1),
+  quantity: z.number(),
+});
+
 export const ApplyDiscountInputSchema = z
   .object({
     quoteId: z.string().min(1),

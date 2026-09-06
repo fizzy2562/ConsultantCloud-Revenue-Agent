@@ -12,6 +12,10 @@ import {
   QuoteResult,
   AddQuoteLineInput,
   QuoteLineResult,
+  RemoveQuoteLineInput,
+  RemoveQuoteLineResult,
+  UpdateQuoteLineInput,
+  UpdateQuoteLineResult,
   ApplyDiscountInput,
   DiscountResult,
   QuoteIdInput,
@@ -426,6 +430,40 @@ export class SalesforceRevenueGateway implements RevenueGateway {
       return {
         ok: true,
         data: { quoteLineId, quoteId: input.quoteId, productId: input.productId, quantity: input.quantity },
+        meta: meta(),
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: { code: "SALESFORCE_ERROR", message: String(err), retryable: true },
+        meta: meta(),
+      };
+    }
+  }
+
+  async removeQuoteLine(input: RemoveQuoteLineInput): Promise<ToolResult<RemoveQuoteLineResult>> {
+    try {
+      await this.conn.sobject("QuoteLineItem").destroy(input.quoteLineId);
+      return {
+        ok: true,
+        data: { quoteLineId: input.quoteLineId, removed: true },
+        meta: meta(),
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: { code: "SALESFORCE_ERROR", message: String(err), retryable: true },
+        meta: meta(),
+      };
+    }
+  }
+
+  async updateQuoteLine(input: UpdateQuoteLineInput): Promise<ToolResult<UpdateQuoteLineResult>> {
+    try {
+      await this.conn.sobject("QuoteLineItem").update({ Id: input.quoteLineId, Quantity: input.quantity });
+      return {
+        ok: true,
+        data: { quoteLineId: input.quoteLineId, quantity: input.quantity },
         meta: meta(),
       };
     } catch (err) {

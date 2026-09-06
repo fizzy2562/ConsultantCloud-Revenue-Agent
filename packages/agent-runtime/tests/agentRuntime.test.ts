@@ -201,6 +201,30 @@ describe("agent runtime", () => {
     expect(result.trace).toMatchObject([{ tool: "create_renewal_quote", badge: "WRITE", blocked: false }]);
   });
 
+  it.each([
+    ["remove_quote_line", { quoteLineId: "a0L000000000001AAA" }, "removeQuoteLine", "Ready to remove quote line"],
+    ["update_quote_line", { quoteLineId: "a0L000000000001AAA", quantity: 3 }, "updateQuoteLine", "Ready to update quote line quantity"],
+  ] as const)("gates %s and executes it only after confirmation", async (toolName, args, gatewayMethod, title) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
+      role: "assistant",
+      content: "",
+      tool_calls: [{ function: { name: toolName, arguments: args } }],
+    })));
+    const gateway = new MockRevenueGateway();
+    const mutationSpy = vi.spyOn(gateway, gatewayMethod);
+
+    const proposed = await runAgentTurn({ kind: "message", text: "Change the quote line", history: [] }, gateway);
+
+    expect(mutationSpy).not.toHaveBeenCalled();
+    expect(proposed.pendingConfirmation).toMatchObject({ toolName, args, summary: { title, cancelLabel: "Cancel" } });
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "Done." })));
+    await runAgentTurn({ kind: "confirm", pending: proposed.pendingConfirmation!, history: [] }, gateway);
+
+    expect(mutationSpy).toHaveBeenCalledOnce();
+    expect(mutationSpy).toHaveBeenCalledWith(expect.objectContaining({ ...args, confirmedByUser: true, idempotencyKey: expect.any(String) }));
+  });
+
   it("uses a known quote number in a mutation confirmation", async () => {
     const quoteId = "a0Q000000000001AAA";
     const fetchMock = vi.fn()

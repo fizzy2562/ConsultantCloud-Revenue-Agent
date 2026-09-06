@@ -1,6 +1,6 @@
 # Revenue MCP tool contracts
 
-All 9 tools registered by `packages/revenue-mcp/src/server.ts` (`createServer`), backed by either `MockRevenueGateway` or `SalesforceRevenueGateway` behind the same `RevenueGateway` interface (`packages/shared`). Every tool returns the `ToolResult<T>` envelope:
+All 11 tools registered by `packages/revenue-mcp/src/server.ts` (`createServer`), backed by either `MockRevenueGateway` or `SalesforceRevenueGateway` behind the same `RevenueGateway` interface (`packages/shared`). Every tool returns the `ToolResult<T>` envelope:
 
 ```ts
 type ToolResult<T> = {
@@ -28,6 +28,8 @@ type ToolResult<T> = {
 | `create_initial_quote` | `{ accountId, termMonths, idempotencyKey, confirmedByUser }` | Always protected — rejects without `confirmedByUser: true` |
 | `create_renewal_quote` | `{ accountId, termMonths, effectiveDate, idempotencyKey, confirmedByUser }` | Always protected — rejects without `confirmedByUser: true` |
 | `add_quote_line` | `{ quoteId, productId, quantity, idempotencyKey, confirmedByUser }` | Not policy-protected itself, but idempotency-guarded |
+| `remove_quote_line` | `{ quoteLineId, idempotencyKey, confirmedByUser }` | Always protected — rejects without `confirmedByUser: true`; removes one line item |
+| `update_quote_line` | `{ quoteLineId, quantity, idempotencyKey, confirmedByUser }` | Always protected — rejects without `confirmedByUser: true`; changes quantity only |
 | `apply_discount` | `{ quoteId, quoteLineId, discountPercent, idempotencyKey, confirmedByUser }` | 0-15% permitted; 15.01-25% requires `confirmedByUser: true`; >25% rejected outright regardless of confirmation |
 
 Every mutation tool is wrapped in `withIdempotency` — repeated calls with the same `idempotencyKey` return the original result without re-invoking the gateway (verified under real concurrent calls, not just sequential — see `docs/tickets/ticket-009-red-team.md`).

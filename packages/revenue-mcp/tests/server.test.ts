@@ -34,6 +34,8 @@ describe("Revenue MCP server", () => {
         "create_initial_quote",
         "create_renewal_quote",
         "add_quote_line",
+        "remove_quote_line",
+        "update_quote_line",
         "apply_discount",
       ].sort()
     );

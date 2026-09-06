@@ -1,5 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { RevenueGateway, CreateInitialQuoteInputSchema, CreateRenewalQuoteInputSchema, AddQuoteLineInputSchema, ApplyDiscountInputSchema, ToolResultSchema, QuoteResultSchema, QuoteLineResultSchema, DiscountResultSchema } from "@consultantcloud/shared";
+import { RevenueGateway, CreateInitialQuoteInputSchema, CreateRenewalQuoteInputSchema, AddQuoteLineInputSchema, RemoveQuoteLineInputSchema, UpdateQuoteLineInputSchema, ApplyDiscountInputSchema, ToolResultSchema, QuoteResultSchema, QuoteLineResultSchema, RemoveQuoteLineResultSchema, UpdateQuoteLineResultSchema, DiscountResultSchema } from "@consultantcloud/shared";
 import type { ToolCallEvent } from "@consultantcloud/shared";
 import type { ZodTypeAny } from "zod";
 import { evaluateDiscount, requireConfirmation, IdempotencyStore, withIdempotency, IdempotencyConflictError } from "@consultantcloud/policy";
@@ -71,6 +71,34 @@ export function registerAddQuoteLine(server: McpServer, gateway: RevenueGateway,
   });
 }
 
+export function registerRemoveQuoteLine(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
+  server.registerTool("remove_quote_line", { title: "Remove Quote Line", description: "Removes a line item from an existing quote. This mutates Salesforce (or the mock) state by deleting the target quote line. It requires confirmedByUser: true. Repeated calls with the same idempotencyKey are safe and will not remove the line more than once; the first result is returned again unchanged.", inputSchema: RemoveQuoteLineInputSchema.shape }, async (args) => {
+    try {
+      const confirmation = requireConfirmation("remove_quote_line", { confirmedByUser: args.confirmedByUser });
+      const rawResult = !confirmation.satisfied ? { ok: false, error: { code: "CONFIRMATION_REQUIRED", message: confirmation.reason ?? "Confirmation required", retryable: false }, meta: { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" as const } } : await withIdempotency(store, args.idempotencyKey, JSON.stringify(args), () => gateway.removeQuoteLine(args), (result) => (result as { ok: boolean }).ok === true);
+      return respond(logger, "remove_quote_line", validateResult(RemoveQuoteLineResultSchema, rawResult), { confirmationEvent: args.confirmedByUser ? "confirmed" : "declined" }, runId);
+    } catch (err) {
+      if (err instanceof IdempotencyConflictError) return respond(logger, "remove_quote_line", validateResult(RemoveQuoteLineResultSchema, idempotencyConflictResult(err)), { confirmationEvent: args.confirmedByUser ? "confirmed" : "declined" }, runId);
+      logToolCallEvent(logger, { requestId: crypto.randomUUID(), runId: runId ?? crypto.randomUUID(), toolName: "remove_quote_line", durationMs: 0, status: "error", timestamp: new Date().toISOString() });
+      throw err;
+    }
+  });
+}
+
+export function registerUpdateQuoteLine(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
+  server.registerTool("update_quote_line", { title: "Update Quote Line", description: "Updates the quantity of an existing quote line. This mutates Salesforce (or the mock) state by changing the target line item's quantity. It requires confirmedByUser: true. Repeated calls with the same idempotencyKey are safe and will not apply the quantity change more than once; the first result is returned again unchanged.", inputSchema: UpdateQuoteLineInputSchema.shape }, async (args) => {
+    try {
+      const confirmation = requireConfirmation("update_quote_line", { confirmedByUser: args.confirmedByUser });
+      const rawResult = !confirmation.satisfied ? { ok: false, error: { code: "CONFIRMATION_REQUIRED", message: confirmation.reason ?? "Confirmation required", retryable: false }, meta: { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" as const } } : await withIdempotency(store, args.idempotencyKey, JSON.stringify(args), () => gateway.updateQuoteLine(args), (result) => (result as { ok: boolean }).ok === true);
+      return respond(logger, "update_quote_line", validateResult(UpdateQuoteLineResultSchema, rawResult), { confirmationEvent: args.confirmedByUser ? "confirmed" : "declined" }, runId);
+    } catch (err) {
+      if (err instanceof IdempotencyConflictError) return respond(logger, "update_quote_line", validateResult(UpdateQuoteLineResultSchema, idempotencyConflictResult(err)), { confirmationEvent: args.confirmedByUser ? "confirmed" : "declined" }, runId);
+      logToolCallEvent(logger, { requestId: crypto.randomUUID(), runId: runId ?? crypto.randomUUID(), toolName: "update_quote_line", durationMs: 0, status: "error", timestamp: new Date().toISOString() });
+      throw err;
+    }
+  });
+}
+
 export function registerApplyDiscount(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
   server.registerTool("apply_discount", { title: "Apply Discount", description: "Applies a discount to an existing quote. This mutates Salesforce (or the mock) state: it updates the quote's discount. Policy bands: 0-15% is permitted without additional approval; 15.01-25% requires manager approval (confirmedByUser: true must be set); above 25% is rejected outright regardless of confirmation. Repeated calls with the same idempotencyKey are safe and will not apply the discount twice; the first result is returned again unchanged.", inputSchema: ApplyDiscountInputSchema.shape }, async (args) => {
     try {
@@ -105,9 +133,13 @@ export function registerMutationTools(server: McpServer, gateway: RevenueGateway
   const initialQuoteStore = new IdempotencyStore<unknown>();
   const renewalQuoteStore = new IdempotencyStore<unknown>();
   const addLineStore = new IdempotencyStore<unknown>();
+  const removeLineStore = new IdempotencyStore<unknown>();
+  const updateLineStore = new IdempotencyStore<unknown>();
   const applyDiscountStore = new IdempotencyStore<unknown>();
   registerCreateInitialQuote(server, gateway, logger, initialQuoteStore, runId);
   registerCreateRenewalQuote(server, gateway, logger, renewalQuoteStore, runId);
   registerAddQuoteLine(server, gateway, logger, addLineStore, runId);
+  registerRemoveQuoteLine(server, gateway, logger, removeLineStore, runId);
+  registerUpdateQuoteLine(server, gateway, logger, updateLineStore, runId);
   registerApplyDiscount(server, gateway, logger, applyDiscountStore, runId);
 }

@@ -11,6 +11,10 @@ import {
   QuoteResult,
   AddQuoteLineInput,
   QuoteLineResult,
+  RemoveQuoteLineInput,
+  RemoveQuoteLineResult,
+  UpdateQuoteLineInput,
+  UpdateQuoteLineResult,
   ApplyDiscountInput,
   DiscountResult,
   QuoteIdInput,
@@ -235,6 +239,39 @@ export class MockRevenueGateway implements RevenueGateway {
     return {
       ok: true,
       data: { quoteLineId: input.quoteLineId, appliedDiscountPercent: input.discountPercent },
+      meta: this.meta(),
+    };
+  }
+
+  async removeQuoteLine(input: RemoveQuoteLineInput): Promise<ToolResult<RemoveQuoteLineResult>> {
+    for (const quote of this.quotes.values()) {
+      const lineIndex = quote.lines.findIndex((line) => line.quoteLineId === input.quoteLineId);
+      if (lineIndex !== -1) {
+        quote.lines.splice(lineIndex, 1);
+        return { ok: true, data: { quoteLineId: input.quoteLineId, removed: true }, meta: this.meta() };
+      }
+    }
+    return {
+      ok: false,
+      error: { code: "NOT_FOUND", message: "Quote line not found", retryable: false },
+      meta: this.meta(),
+    };
+  }
+
+  async updateQuoteLine(input: UpdateQuoteLineInput): Promise<ToolResult<UpdateQuoteLineResult>> {
+    for (const quote of this.quotes.values()) {
+      const line = quote.lines.find((candidate) => candidate.quoteLineId === input.quoteLineId);
+      if (line) {
+        const product = products.find((candidate) => candidate.name === line.productName);
+        const listPrice = product ? (product.listPrice as number) : 0;
+        line.quantity = input.quantity;
+        line.netPrice = input.quantity * listPrice * (1 - line.discountPercent / 100);
+        return { ok: true, data: { quoteLineId: input.quoteLineId, quantity: input.quantity }, meta: this.meta() };
+      }
+    }
+    return {
+      ok: false,
+      error: { code: "NOT_FOUND", message: "Quote line not found", retryable: false },
       meta: this.meta(),
     };
   }

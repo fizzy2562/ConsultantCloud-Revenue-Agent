@@ -35,6 +35,8 @@ class FailingGateway implements RevenueGateway {
   createRenewalQuote: RevenueGateway["createRenewalQuote"] = (input) => this.inner.createRenewalQuote(input);
   applyDiscount: RevenueGateway["applyDiscount"] = (input) => this.inner.applyDiscount(input);
   getQuoteSummary: RevenueGateway["getQuoteSummary"] = (input) => this.inner.getQuoteSummary(input);
+  removeQuoteLine: RevenueGateway["removeQuoteLine"] = (input) => this.inner.removeQuoteLine(input);
+  updateQuoteLine: RevenueGateway["updateQuoteLine"] = (input) => this.inner.updateQuoteLine(input);
 
   addQuoteLine: RevenueGateway["addQuoteLine"] = () => {
     throw new Error("Simulated Salesforce API timeout");
@@ -51,6 +53,8 @@ class ReturningFailureGateway implements RevenueGateway {
   createRenewalQuote: RevenueGateway["createRenewalQuote"] = (input) => this.inner.createRenewalQuote(input);
   applyDiscount: RevenueGateway["applyDiscount"] = (input) => this.inner.applyDiscount(input);
   getQuoteSummary: RevenueGateway["getQuoteSummary"] = (input) => this.inner.getQuoteSummary(input);
+  removeQuoteLine: RevenueGateway["removeQuoteLine"] = (input) => this.inner.removeQuoteLine(input);
+  updateQuoteLine: RevenueGateway["updateQuoteLine"] = (input) => this.inner.updateQuoteLine(input);
 
   addQuoteLine: RevenueGateway["addQuoteLine"] = () =>
     Promise.resolve({
