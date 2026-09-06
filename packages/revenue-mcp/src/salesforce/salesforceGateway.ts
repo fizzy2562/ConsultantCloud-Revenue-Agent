@@ -117,6 +117,11 @@ export class SalesforceRevenueGateway implements RevenueGateway {
         productName: record.Product2?.Name ?? null,
         quantity: record.Quantity ?? null,
         status: record.Status ?? null,
+        // Resolving the originating/current quote line for an Asset needs a follow-up
+        // query against QuoteLineItem (no direct Asset->QuoteLineItem field is queried
+        // here yet); left null rather than guessed.
+        quoteId: null,
+        quoteLineId: null,
       }));
       return { ok: true, data, meta: meta() };
     } catch (err) {

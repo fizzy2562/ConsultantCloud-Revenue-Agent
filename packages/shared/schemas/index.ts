@@ -45,6 +45,8 @@ export const AccountAssetSchema = z.object({
   productName: z.string().nullable(),
   quantity: z.number().nullable(),
   status: z.string().nullable(),
+  quoteId: z.string().nullable(),
+  quoteLineId: z.string().nullable(),
 });
 
 export const AccountAssetsOutputSchema = z.array(AccountAssetSchema);

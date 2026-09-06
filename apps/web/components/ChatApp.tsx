@@ -1,66 +1,103 @@
 "use client";
 
 import { useState } from "react";
-import {
-  conversationFlows,
-  type ConversationFlow,
-  type ChatMessage,
-  type TraceEntry,
-} from "../lib/mockConversation";
 import { ConfirmationCard } from "./ConfirmationCard";
 import { ToolTracePanel } from "./ToolTracePanel";
 
+type ChatTurn = { role: "user" | "assistant"; content: string };
+
+type PendingConfirmation = {
+  toolName: string;
+  args: Record<string, unknown>;
+  summary: { title: string; lines: string[]; confirmLabel: string; cancelLabel: string };
+};
+
+type RequestBody =
+  | { kind: "message"; text: string; history: ChatTurn[] }
+  | { kind: "confirm"; pending: PendingConfirmation; history: ChatTurn[] }
+  | { kind: "cancel"; pending: PendingConfirmation; history: ChatTurn[] };
+
+type AgentTraceEntry = {
+  tool: string;
+  badge: "READ" | "WRITE" | "GATE";
+  durationMs: number;
+  blocked: boolean;
+  summary: string;
+};
+
+type AgentTurnResult = {
+  message: string;
+  trace: AgentTraceEntry[];
+  pendingConfirmation: PendingConfirmation | null;
+};
+
+const starterPrompts = [
+  "Renew Acme University for 3 years and increase Cloud Pro to 250 seats.",
+  "Create an initial quote for Greenfield Health with 75 Cloud Pro seats.",
+  "Give Acme University a 20% discount.",
+  "Try to give Acme University a 30% discount.",
+];
+
 export function ChatApp() {
-  const [activeFlow, setActiveFlow] = useState<ConversationFlow | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [visibleTrace, setVisibleTrace] = useState<TraceEntry[]>([]);
-  const [confirmationResolved, setConfirmationResolved] = useState(false);
+  const [messages, setMessages] = useState<Array<{ role: "user" | "agent"; text: string }>>([]);
+  const [history, setHistory] = useState<ChatTurn[]>([]);
+  const [trace, setTrace] = useState<AgentTraceEntry[]>([]);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [traceExpanded, setTraceExpanded] = useState(false);
   const [inputValue, setInputValue] = useState("");
 
-  function startFlow(flow: ConversationFlow) {
-    setActiveFlow(flow);
-    setMessages([...flow.messages]);
-    setVisibleTrace([...flow.preConfirmationTrace]);
-    setConfirmationResolved(false);
-  }
+  async function sendTurn(body: RequestBody) {
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-  function handleSubmitInput() {
-    const trimmed = inputValue.trim();
-    const matched = conversationFlows.find((flow) => flow.starterPrompt === trimmed);
-    if (matched) {
-      startFlow(matched);
-    } else {
+      if (!res.ok) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "agent", text: "Something went wrong reaching the agent. Please try again." },
+        ]);
+        return;
+      }
+
+      const result = (await res.json()) as AgentTurnResult;
+      setMessages((prev) => [...prev, { role: "agent", text: result.message }]);
+      setTrace((prev) => [...prev, ...result.trace]);
+      setPendingConfirmation(result.pendingConfirmation);
+      setHistory((prev) => [...prev, { role: "assistant", content: result.message }]);
+    } catch {
       setMessages((prev) => [
         ...prev,
-        { role: "user", text: trimmed },
-        {
-          role: "agent",
-          text: "I don't have a scripted response for that in this demo — try one of the starter prompts above.",
-        },
+        { role: "agent", text: "Something went wrong reaching the agent. Please try again." },
       ]);
+    } finally {
+      setIsLoading(false);
     }
+  }
+
+  function handleSendText(text: string) {
+    const trimmed = text.trim();
+    if (isLoading || trimmed === "") return;
+
+    const newHistory: ChatTurn[] = [...history, { role: "user", content: trimmed }];
+    setMessages((prev) => [...prev, { role: "user", text: trimmed }]);
+    setHistory(newHistory);
     setInputValue("");
+    sendTurn({ kind: "message", text: trimmed, history: newHistory });
   }
 
   function handleConfirm() {
-    setConfirmationResolved(true);
-    if (activeFlow) {
-      setVisibleTrace((prev) => [
-        ...prev,
-        ...activeFlow.postConfirmationTrace,
-      ]);
-    }
-    if (activeFlow?.afterConfirmMessage) {
-      setMessages((prev) => [
-        ...prev,
-        { role: "agent", text: activeFlow.afterConfirmMessage as string },
-      ]);
-    }
+    if (!pendingConfirmation) return;
+    sendTurn({ kind: "confirm", pending: pendingConfirmation, history });
   }
 
   function handleCancel() {
-    setConfirmationResolved(true);
+    if (!pendingConfirmation) return;
+    sendTurn({ kind: "cancel", pending: pendingConfirmation, history });
   }
 
   return (
@@ -84,9 +121,9 @@ export function ChatApp() {
       </section>
 
       <div className="cc-starter-prompts">
-        {conversationFlows.map((flow) => (
-          <button key={flow.id} type="button" onClick={() => startFlow(flow)}>
-            {flow.starterPrompt}
+        {starterPrompts.map((prompt) => (
+          <button key={prompt} type="button" onClick={() => handleSendText(prompt)}>
+            {prompt}
           </button>
         ))}
       </div>
@@ -102,9 +139,12 @@ export function ChatApp() {
                 {message.text}
               </div>
             ))}
-            {activeFlow?.confirmation && !confirmationResolved && (
+            {isLoading && (
+              <div className="cc-chat-bubble cc-chat-bubble--agent">Thinking…</div>
+            )}
+            {pendingConfirmation && (
               <ConfirmationCard
-                data={activeFlow.confirmation}
+                data={pendingConfirmation.summary}
                 onConfirm={handleConfirm}
                 onCancel={handleCancel}
               />
@@ -115,15 +155,18 @@ export function ChatApp() {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleSubmitInput();
+                if (e.key === "Enter") handleSendText(inputValue);
               }}
               placeholder="Type a commercial request..."
+              disabled={isLoading}
             />
-            <button type="button" onClick={handleSubmitInput}>Send</button>
+            <button type="button" onClick={() => handleSendText(inputValue)} disabled={isLoading}>
+              Send
+            </button>
           </div>
         </div>
         <ToolTracePanel
-          entries={visibleTrace}
+          entries={trace}
           expanded={traceExpanded}
           onToggle={() => setTraceExpanded((v) => !v)}
         />

@@ -16,8 +16,8 @@ import {
   QuoteIdInput,
   QuoteSummary,
   ToolResult,
-} from "../types/index.js";
-import { accounts, products, accountAssets } from "./mockData.js";
+} from "../types/index";
+import { accounts, products, accountAssets, ACME_UNIVERSITY_ID } from "./mockData";
 
 type StoredQuoteLine = {
   quoteLineId: string;
@@ -43,8 +43,40 @@ export class MockRevenueGateway implements RevenueGateway {
   private quoteCounter = 1;
   private lineCounter = 1;
 
+  constructor() {
+    // Acme University is fixture data for an existing customer (see existingDiscountPercent
+    // in mockData.ts) — seed the active quote/line their existing asset actually lives on,
+    // so discount flows have a real quoteId/quoteLineId to act on instead of nothing at all.
+    this.quotes.set("a0Q000000000001AAA", {
+      quoteId: "a0Q000000000001AAA",
+      quoteNumber: "Q-10000",
+      accountId: ACME_UNIVERSITY_ID,
+      status: "Active",
+      termMonths: 36,
+      lines: [
+        {
+          quoteLineId: "a0L000000000001AAA",
+          productId: "01t000000000002AAA",
+          productName: "Cloud Pro",
+          quantity: 100,
+          discountPercent: 12,
+          netPrice: 100 * 2400 * (1 - 0.12),
+        },
+      ],
+    });
+  }
+
   private meta(): ToolResult<never>["meta"] {
     return { requestId: crypto.randomUUID(), durationMs: 0, source: "mock" };
+  }
+
+  private findQuoteLineForProduct(accountId: string, productName: string | null): { quoteId: string; quoteLineId: string } | null {
+    for (const quote of this.quotes.values()) {
+      if (quote.accountId !== accountId) continue;
+      const line = quote.lines.find((l) => l.productName === productName);
+      if (line) return { quoteId: quote.quoteId, quoteLineId: line.quoteLineId };
+    }
+    return null;
   }
 
   async findAccount(input: FindAccountInput): Promise<ToolResult<AccountSummary[]>> {
@@ -54,7 +86,12 @@ export class MockRevenueGateway implements RevenueGateway {
   }
 
   async getAccountAssets(input: AccountIdInput): Promise<ToolResult<AccountAsset[]>> {
-    return { ok: true, data: accountAssets[input.accountId] ?? [], meta: this.meta() };
+    const assets = accountAssets[input.accountId] ?? [];
+    const data: AccountAsset[] = assets.map((asset) => {
+      const linked = this.findQuoteLineForProduct(input.accountId, asset.productName);
+      return { ...asset, quoteId: linked?.quoteId ?? null, quoteLineId: linked?.quoteLineId ?? null };
+    });
+    return { ok: true, data, meta: this.meta() };
   }
 
   async searchProducts(input: ProductSearchInput): Promise<ToolResult<ProductSummary[]>> {

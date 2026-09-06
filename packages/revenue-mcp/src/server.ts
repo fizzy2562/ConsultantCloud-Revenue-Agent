@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { registerReadTools } from "./tools/index.js";
-import { registerMutationTools } from "./tools/mutations.js";
+import { registerReadTools } from "./tools/index";
+import { registerMutationTools } from "./tools/mutations";
 import { RevenueGateway, MockRevenueGateway } from "@consultantcloud/shared";
 import { EventLogger, FileEventSink } from "@consultantcloud/telemetry";
 

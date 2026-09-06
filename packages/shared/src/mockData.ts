@@ -1,4 +1,4 @@
-import type { AccountSummary, AccountAsset, ProductSummary } from "../types/index.js";
+import type { AccountSummary, AccountAsset, ProductSummary } from "../types/index";
 
 export const ACME_UNIVERSITY_ID = "001000000000001AAA";
 export const GREENFIELD_HEALTH_ID = "001000000000002AAA";
@@ -43,6 +43,8 @@ export const accountAssets: Record<string, AccountAsset[]> = {
       productName: "Cloud Pro",
       quantity: 100,
       status: "Active",
+      quoteId: null,
+      quoteLineId: null,
     },
   ],
   [GREENFIELD_HEALTH_ID]: [],

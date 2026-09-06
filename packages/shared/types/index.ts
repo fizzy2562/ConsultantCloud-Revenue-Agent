@@ -20,7 +20,7 @@ import {
   QuoteLineResultSchema,
   ApplyDiscountInputSchema,
   DiscountResultSchema,
-} from "../schemas/index.js";
+} from "../schemas/index";
 
 export type ToolResult<T> = z.infer<ReturnType<typeof ToolResultSchema<z.ZodType<T>>>>;
 

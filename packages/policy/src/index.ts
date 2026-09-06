@@ -1,3 +1,3 @@
-export * from "./discountPolicy.js";
-export * from "./protectedMutations.js";
-export * from "./idempotencyStore.js";
+export * from "./discountPolicy";
+export * from "./protectedMutations";
+export * from "./idempotencyStore";

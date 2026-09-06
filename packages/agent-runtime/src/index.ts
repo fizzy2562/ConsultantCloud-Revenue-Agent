@@ -1,0 +1,209 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
+import { createServer } from "@consultantcloud/revenue-mcp";
+import type { RevenueGateway } from "@consultantcloud/shared";
+
+export type ChatTurn = { role: "user" | "assistant"; content: string };
+
+export type AgentTraceEntry = {
+  tool: string;
+  badge: "READ" | "WRITE" | "GATE";
+  durationMs: number;
+  blocked: boolean;
+  summary: string;
+};
+
+export type PendingConfirmation = {
+  toolName: string;
+  args: Record<string, unknown>;
+  summary: { title: string; lines: string[]; confirmLabel: string; cancelLabel: string };
+};
+
+export type AgentTurnResult = {
+  message: string;
+  trace: AgentTraceEntry[];
+  pendingConfirmation: PendingConfirmation | null;
+};
+
+export type RunAgentTurnInput =
+  | { kind: "message"; text: string; history: ChatTurn[] }
+  | { kind: "confirm"; pending: PendingConfirmation; history: ChatTurn[] }
+  | { kind: "cancel"; pending: PendingConfirmation; history: ChatTurn[] };
+
+export interface AgentRuntimeOptions {
+  ollamaUrl?: string;
+  model?: string;
+}
+
+type ToolEnvelope = {
+  ok: boolean;
+  data?: unknown;
+  error?: { code: string; message: string; retryable: boolean };
+  meta: { requestId: string; durationMs: number; source: "salesforce" | "policy" | "mock" };
+};
+
+type OllamaToolCall = { function: { name: string; arguments?: Record<string, unknown> } };
+type OllamaMessage = {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+  tool_name?: string;
+  tool_calls?: OllamaToolCall[];
+};
+
+const MUTATION_TOOLS = new Set([
+  "create_initial_quote",
+  "create_renewal_quote",
+  "add_quote_line",
+  "apply_discount",
+]);
+
+const SYSTEM_PROMPT = `You are a commercial assistant for Salesforce Revenue Management requests involving quotes, renewals, quote line items, and discounts.
+Use the available tools to retrieve facts and perform requested work. Always resolve an account by name with find_account before calling any tool that needs an accountId. Use get_account_revenue_context and get_account_assets for account context, search_products to resolve products, and get_quote_summary to inspect a quote.
+When the user's request requires creating a quote, adding a line item, or applying a discount, call that tool directly with the real arguments you intend — you do not need to ask the user for permission yourself; a separate confirmation step outside your control handles that. Never invent an account ID, product ID, quote ID, or price — only use values you got from a tool result.`;
+
+async function connectedClient(gateway: RevenueGateway) {
+  const server = createServer(gateway);
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "agent-runtime", version: "0.1.0" });
+  await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
+  return client;
+}
+
+function parseToolResult(result: unknown): ToolEnvelope {
+  const content = (result as { content?: Array<{ type: string; text?: string }> }).content;
+  const first = content?.[0];
+  if (!first || first.type !== "text" || typeof first.text !== "string") {
+    throw new Error("Revenue MCP tool returned no JSON text content");
+  }
+  return JSON.parse(first.text) as ToolEnvelope;
+}
+
+function display(value: unknown): string {
+  return typeof value === "string" || typeof value === "number" ? String(value) : "Not specified";
+}
+
+function confirmationFor(toolName: string, args: Record<string, unknown>, accountNames: Map<string, string>): PendingConfirmation {
+  const account = () => accountNames.get(String(args.accountId)) ?? display(args.accountId);
+  switch (toolName) {
+    case "create_initial_quote":
+      return { toolName, args, summary: { title: "Ready to create initial quote", lines: [`Account: ${account()}`, `Term: ${display(args.termMonths)} months`], confirmLabel: "Create quote", cancelLabel: "Cancel" } };
+    case "create_renewal_quote":
+      return { toolName, args, summary: { title: "Ready to create renewal quote", lines: [`Account: ${account()}`, `Term: ${display(args.termMonths)} months`, `Effective date: ${display(args.effectiveDate)}`], confirmLabel: "Create renewal", cancelLabel: "Cancel" } };
+    case "add_quote_line":
+      return { toolName, args, summary: { title: "Ready to add quote line", lines: [`Quote: ${display(args.quoteId)}`, `Product: ${display(args.productId)}`, `Quantity: ${display(args.quantity)}`], confirmLabel: "Add line item", cancelLabel: "Cancel" } };
+    case "apply_discount":
+      return { toolName, args, summary: { title: "Ready to apply discount", lines: [`Quote: ${display(args.quoteId)}`, `Quote line: ${display(args.quoteLineId)}`, `Discount: ${display(args.discountPercent)}%`], confirmLabel: "Apply discount", cancelLabel: "Cancel" } };
+    default:
+      throw new Error(`Unsupported mutation tool: ${toolName}`);
+  }
+}
+
+function proposedMessage(pending: PendingConfirmation): string {
+  return `${pending.summary.title}. Please review the details and confirm to continue.`;
+}
+
+function resultSummary(tool: string, result: ToolEnvelope): string {
+  if (!result.ok) return result.error?.message ?? `${tool} failed`;
+  const data = result.data as Record<string, unknown> | Array<Record<string, unknown>> | undefined;
+  if (tool === "find_account") {
+    const matches = Array.isArray(data) ? data : [];
+    return matches[0] ? `${display(matches[0].name)} found` : "No matching account";
+  }
+  if (tool === "search_products") {
+    const matches = Array.isArray(data) ? data : [];
+    return matches[0] ? `${display(matches[0].name)} located` : "No matching product";
+  }
+  if (tool === "get_account_assets") return `${Array.isArray(data) ? data.length : 0} account assets found`;
+  if (tool === "get_account_revenue_context") return "Revenue context retrieved";
+  if (tool === "get_quote_summary") return `Quote ${display(!Array.isArray(data) && data?.quoteNumber)} retrieved`;
+  if (tool === "create_initial_quote" || tool === "create_renewal_quote") return `Quote ${display(!Array.isArray(data) && data?.quoteNumber)} created`;
+  if (tool === "add_quote_line") return `Quote line ${display(!Array.isArray(data) && data?.quoteLineId)} added`;
+  if (tool === "apply_discount") return `${display(!Array.isArray(data) && data?.appliedDiscountPercent)}% discount applied`;
+  return `${tool} completed`;
+}
+
+function resultMessage(tool: string, result: ToolEnvelope): string {
+  if (!result.ok) return result.error?.message ?? `The ${tool} operation failed.`;
+  return `${resultSummary(tool, result)}.`;
+}
+
+async function callRevenueTool(client: Client, name: string, args: Record<string, unknown>) {
+  const started = Date.now();
+  const raw = await client.callTool({ name, arguments: args }, CallToolResultSchema);
+  return { result: parseToolResult(raw), durationMs: Date.now() - started };
+}
+
+export async function runAgentTurn(
+  input: RunAgentTurnInput,
+  gateway: RevenueGateway,
+  options: AgentRuntimeOptions = {}
+): Promise<AgentTurnResult> {
+  if (input.kind === "cancel") return { message: "No changes made.", trace: [], pendingConfirmation: null };
+
+  const client = await connectedClient(gateway);
+  if (input.kind === "confirm") {
+    if (!MUTATION_TOOLS.has(input.pending.toolName)) {
+      throw new Error(`Cannot confirm non-mutation tool: ${input.pending.toolName}`);
+    }
+    const args = { ...input.pending.args, confirmedByUser: true, idempotencyKey: crypto.randomUUID() };
+    const { result, durationMs } = await callRevenueTool(client, input.pending.toolName, args);
+    const blocked = !result.ok && (result.error?.code === "DISCOUNT_REJECTED" || result.error?.code === "CONFIRMATION_REQUIRED");
+    return {
+      message: resultMessage(input.pending.toolName, result),
+      trace: [{ tool: input.pending.toolName, badge: "WRITE", durationMs, blocked, summary: resultSummary(input.pending.toolName, result) }],
+      pendingConfirmation: null,
+    };
+  }
+
+  const { tools } = await client.listTools();
+  const ollamaTools = tools.map((tool) => ({
+    type: "function",
+    function: { name: tool.name, description: tool.description, parameters: tool.inputSchema },
+  }));
+  const messages: OllamaMessage[] = [
+    { role: "system", content: SYSTEM_PROMPT },
+    ...input.history,
+    { role: "user", content: input.text },
+  ];
+  const trace: AgentTraceEntry[] = [];
+  const accountNames = new Map<string, string>();
+  let latestText = "";
+
+  for (let iteration = 0; iteration < 4; iteration += 1) {
+    const baseUrl = (options.ollamaUrl ?? "http://127.0.0.1:11434").replace(/\/+$/, "");
+    const response = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: options.model ?? "qwen3.8:27b", stream: false, think: false, messages, tools: ollamaTools }),
+    });
+    if (!response.ok) throw new Error(`Ollama ${response.status}: ${(await response.text()).slice(0, 300)}`);
+    const body = await response.json() as { message?: OllamaMessage };
+    const assistant = body.message;
+    if (!assistant) throw new Error("Ollama response did not contain a message");
+    latestText = assistant.content ?? latestText;
+    messages.push(assistant);
+    const calls = assistant.tool_calls ?? [];
+    if (calls.length === 0) return { message: assistant.content, trace, pendingConfirmation: null };
+
+    const mutation = calls.find((call) => MUTATION_TOOLS.has(call.function.name));
+    if (mutation) {
+      const pending = confirmationFor(mutation.function.name, mutation.function.arguments ?? {}, accountNames);
+      return { message: proposedMessage(pending), trace, pendingConfirmation: pending };
+    }
+
+    for (const call of calls) {
+      const args = call.function.arguments ?? {};
+      const { result, durationMs } = await callRevenueTool(client, call.function.name, args);
+      trace.push({ tool: call.function.name, badge: "READ", durationMs, blocked: false, summary: resultSummary(call.function.name, result) });
+      if (call.function.name === "find_account" && result.ok && Array.isArray(result.data)) {
+        for (const account of result.data as Array<Record<string, unknown>>) {
+          if (typeof account.id === "string" && typeof account.name === "string") accountNames.set(account.id, account.name);
+        }
+      }
+      messages.push({ role: "tool", tool_name: call.function.name, content: JSON.stringify(result) });
+    }
+  }
+
+  return { message: latestText, trace, pendingConfirmation: null };
+}
