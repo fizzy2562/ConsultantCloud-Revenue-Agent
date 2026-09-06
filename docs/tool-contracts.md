@@ -2,6 +2,8 @@
 
 All 12 tools registered by `packages/revenue-mcp/src/server.ts` (`createServer`), backed by either `MockRevenueGateway` or `SalesforceRevenueGateway` behind the same `RevenueGateway` interface (`packages/shared`). Every tool returns the `ToolResult<T>` envelope:
 
+The Salesforce gateway's Flow-action calls use `packages/policy`'s `withRetry` and `CircuitBreaker`: calls receive up to three attempts with exponential backoff, and the circuit opens after three consecutive failed operations for a 30-second cooldown. This covers `getAccountAssets`, `createInitialQuote`, `createRenewalQuote`, `createAmendmentQuote`, `addQuoteLine`, and `applyDiscount`; direct SOQL and `sobject()` calls are not currently covered.
+
 ```ts
 type ToolResult<T> = {
   ok: boolean;

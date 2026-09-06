@@ -1,12 +1,12 @@
 {
-  "runAt": "2026-09-06T15:32:24.247Z",
+  "runAt": "2026-09-06T15:42:11.325Z",
   "results": [
     {
       "id": "E01",
       "name": "Happy renewal",
       "input": "Renew Acme University for 3 years and increase Cloud Pro to 250.",
       "passed": true,
-      "notes": "renewal quote a0Qe6fa79c2-4e92-483b-bd4c-8ef0f63a7b59 created only after confirmation"
+      "notes": "renewal quote a0Qd44f295a-3dc0-4227-a971-6aa6bcb1527e created only after confirmation"
     },
     {
       "id": "E02",
@@ -48,7 +48,7 @@
       "name": "Duplicate mutation",
       "input": "Renew Acme University for 3 years (sent twice).",
       "passed": true,
-      "notes": "duplicate request returned same quoteId a0Q1d7972a1-8cee-4e8b-bd98-d606b1ef4d0f"
+      "notes": "duplicate request returned same quoteId a0Q6ce71cf6-489e-45e8-8abf-eb908a975fa3"
     },
     {
       "id": "E08",

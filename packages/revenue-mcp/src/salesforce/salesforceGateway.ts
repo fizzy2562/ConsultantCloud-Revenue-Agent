@@ -1,4 +1,5 @@
 import type { Connection } from "jsforce";
+import { CircuitBreaker, withRetry } from "@consultantcloud/policy";
 import {
   RevenueGateway,
   FindAccountInput,
@@ -24,19 +25,25 @@ import {
   ToolResult,
 } from "@consultantcloud/shared";
 
+const flowActionBreaker = new CircuitBreaker();
+
 async function invokeFlowAction<T = Record<string, unknown>>(
   conn: Connection,
   actionName: string,
   input: Record<string, unknown>
 ): Promise<{ isSuccess: boolean; outputValues: T | null }> {
-  const response = await conn.requestPost<
-    Array<{ isSuccess: boolean; outputValues: T | null; errors: unknown }>
-  >(`/services/data/v62.0/actions/custom/flow/${actionName}`, { inputs: [input] });
-  const result = response[0];
-  if (!result) {
-    return { isSuccess: false, outputValues: null };
-  }
-  return { isSuccess: result.isSuccess, outputValues: result.outputValues };
+  return flowActionBreaker.execute(() =>
+    withRetry(async () => {
+      const response = await conn.requestPost<
+        Array<{ isSuccess: boolean; outputValues: T | null; errors: unknown }>
+      >(`/services/data/v62.0/actions/custom/flow/${actionName}`, { inputs: [input] });
+      const result = response[0];
+      if (!result) {
+        return { isSuccess: false, outputValues: null };
+      }
+      return { isSuccess: result.isSuccess, outputValues: result.outputValues };
+    })
+  );
 }
 
 function meta(source: "salesforce" = "salesforce") {
