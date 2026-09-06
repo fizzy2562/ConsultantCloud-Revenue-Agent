@@ -20,6 +20,9 @@ importers:
       '@consultantcloud/agent-runtime':
         specifier: workspace:*
         version: link:../../packages/agent-runtime
+      '@consultantcloud/revenue-mcp':
+        specifier: workspace:*
+        version: link:../../packages/revenue-mcp
       '@consultantcloud/shared':
         specifier: workspace:*
         version: link:../../packages/shared

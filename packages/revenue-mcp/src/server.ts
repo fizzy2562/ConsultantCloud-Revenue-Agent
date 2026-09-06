@@ -4,6 +4,15 @@ import { registerReadTools } from "./tools/index";
 import { registerMutationTools } from "./tools/mutations";
 import { RevenueGateway, MockRevenueGateway } from "@consultantcloud/shared";
 import { EventLogger, FileEventSink } from "@consultantcloud/telemetry";
+import { createSalesforceConnection } from "./salesforce/auth";
+import { SalesforceRevenueGateway } from "./salesforce/salesforceGateway";
+
+export function createRevenueGateway(): RevenueGateway {
+  if (process.env.SF_INSTANCE_URL && process.env.SF_ACCESS_TOKEN) {
+    return new SalesforceRevenueGateway(createSalesforceConnection());
+  }
+  return new MockRevenueGateway();
+}
 
 export function createServer(gateway: RevenueGateway, options?: { runId?: string }): McpServer {
   const server = new McpServer({ name: "consultantcloud-revenue-mcp", version: "0.1.0" });

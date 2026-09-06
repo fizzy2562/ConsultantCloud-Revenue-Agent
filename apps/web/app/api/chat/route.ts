@@ -1,9 +1,9 @@
-import { MockRevenueGateway } from "@consultantcloud/shared";
+import { createRevenueGateway } from "@consultantcloud/revenue-mcp";
 import { runAgentTurn, type RunAgentTurnInput } from "@consultantcloud/agent-runtime";
 
 export const runtime = "nodejs";
 
-const gateway = new MockRevenueGateway();
+const gateway = createRevenueGateway();
 
 export async function POST(request: Request) {
   let body: unknown;
