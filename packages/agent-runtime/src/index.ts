@@ -83,17 +83,23 @@ function display(value: unknown): string {
   return typeof value === "string" || typeof value === "number" ? String(value) : "Not specified";
 }
 
-function confirmationFor(toolName: string, args: Record<string, unknown>, accountNames: Map<string, string>): PendingConfirmation {
+function confirmationFor(
+  toolName: string,
+  args: Record<string, unknown>,
+  accountNames: Map<string, string>,
+  quoteNumbers: Map<string, string>
+): PendingConfirmation {
   const account = () => accountNames.get(String(args.accountId)) ?? display(args.accountId);
+  const quote = () => quoteNumbers.get(String(args.quoteId)) ?? display(args.quoteId);
   switch (toolName) {
     case "create_initial_quote":
       return { toolName, args, summary: { title: "Ready to create initial quote", lines: [`Account: ${account()}`, `Term: ${display(args.termMonths)} months`], confirmLabel: "Create quote", cancelLabel: "Cancel" } };
     case "create_renewal_quote":
       return { toolName, args, summary: { title: "Ready to create renewal quote", lines: [`Account: ${account()}`, `Term: ${display(args.termMonths)} months`, `Effective date: ${display(args.effectiveDate)}`], confirmLabel: "Create renewal", cancelLabel: "Cancel" } };
     case "add_quote_line":
-      return { toolName, args, summary: { title: "Ready to add quote line", lines: [`Quote: ${display(args.quoteId)}`, `Product: ${display(args.productId)}`, `Quantity: ${display(args.quantity)}`], confirmLabel: "Add line item", cancelLabel: "Cancel" } };
+      return { toolName, args, summary: { title: "Ready to add quote line", lines: [`Quote: ${quote()}`, `Product: ${display(args.productId)}`, `Quantity: ${display(args.quantity)}`], confirmLabel: "Add line item", cancelLabel: "Cancel" } };
     case "apply_discount":
-      return { toolName, args, summary: { title: "Ready to apply discount", lines: [`Quote: ${display(args.quoteId)}`, `Quote line: ${display(args.quoteLineId)}`, `Discount: ${display(args.discountPercent)}%`], confirmLabel: "Apply discount", cancelLabel: "Cancel" } };
+      return { toolName, args, summary: { title: "Ready to apply discount", lines: [`Quote: ${quote()}`, `Quote line: ${display(args.quoteLineId)}`, `Discount: ${display(args.discountPercent)}%`], confirmLabel: "Apply discount", cancelLabel: "Cancel" } };
     default:
       throw new Error(`Unsupported mutation tool: ${toolName}`);
   }
@@ -142,33 +148,50 @@ export async function runAgentTurn(
   if (input.kind === "cancel") return { message: "No changes made.", trace: [], pendingConfirmation: null };
 
   const client = await connectedClient(gateway);
-  if (input.kind === "confirm") {
+  const { tools } = await client.listTools();
+  const ollamaTools = tools.map((tool) => ({
+    type: "function",
+    function: { name: tool.name, description: tool.description, parameters: tool.inputSchema },
+  }));
+  const messages: OllamaMessage[] = [{ role: "system", content: SYSTEM_PROMPT }, ...input.history];
+  const trace: AgentTraceEntry[] = [];
+  const accountNames = new Map<string, string>();
+  const quoteNumbers = new Map<string, string>();
+  let latestText = "";
+  let confirmedMessage = "";
+
+  const rememberResult = (result: ToolEnvelope) => {
+    if (!result.ok || Array.isArray(result.data) || !result.data || typeof result.data !== "object") return;
+    const data = result.data as Record<string, unknown>;
+    if (typeof data.quoteId === "string" && typeof data.quoteNumber === "string") {
+      quoteNumbers.set(data.quoteId, data.quoteNumber);
+    }
+  };
+
+  if (input.kind === "message") {
+    messages.push({ role: "user", content: input.text });
+  } else {
     if (!MUTATION_TOOLS.has(input.pending.toolName)) {
       throw new Error(`Cannot confirm non-mutation tool: ${input.pending.toolName}`);
     }
     const args = { ...input.pending.args, confirmedByUser: true, idempotencyKey: crypto.randomUUID() };
     const { result, durationMs } = await callRevenueTool(client, input.pending.toolName, args);
     const blocked = !result.ok && (result.error?.code === "DISCOUNT_REJECTED" || result.error?.code === "CONFIRMATION_REQUIRED");
-    return {
-      message: resultMessage(input.pending.toolName, result),
-      trace: [{ tool: input.pending.toolName, badge: "WRITE", durationMs, blocked, summary: resultSummary(input.pending.toolName, result) }],
-      pendingConfirmation: null,
-    };
+    trace.push({ tool: input.pending.toolName, badge: "WRITE", durationMs, blocked, summary: resultSummary(input.pending.toolName, result) });
+    rememberResult(result);
+    confirmedMessage = resultMessage(input.pending.toolName, result);
+    messages.push({
+      role: "assistant",
+      content: "",
+      tool_calls: [{ function: { name: input.pending.toolName, arguments: args } }],
+    });
+    messages.push({ role: "tool", tool_name: input.pending.toolName, content: JSON.stringify(result) });
   }
 
-  const { tools } = await client.listTools();
-  const ollamaTools = tools.map((tool) => ({
-    type: "function",
-    function: { name: tool.name, description: tool.description, parameters: tool.inputSchema },
-  }));
-  const messages: OllamaMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT },
-    ...input.history,
-    { role: "user", content: input.text },
-  ];
-  const trace: AgentTraceEntry[] = [];
-  const accountNames = new Map<string, string>();
-  let latestText = "";
+  const combinedMessage = (continuation: string) => {
+    if (!confirmedMessage) return continuation;
+    return continuation ? `${confirmedMessage} ${continuation}` : confirmedMessage;
+  };
 
   for (let iteration = 0; iteration < 4; iteration += 1) {
     const baseUrl = (options.ollamaUrl ?? "http://127.0.0.1:11434").replace(/\/+$/, "");
@@ -184,12 +207,12 @@ export async function runAgentTurn(
     latestText = assistant.content ?? latestText;
     messages.push(assistant);
     const calls = assistant.tool_calls ?? [];
-    if (calls.length === 0) return { message: assistant.content, trace, pendingConfirmation: null };
+    if (calls.length === 0) return { message: combinedMessage(assistant.content), trace, pendingConfirmation: null };
 
     const mutation = calls.find((call) => MUTATION_TOOLS.has(call.function.name));
     if (mutation) {
-      const pending = confirmationFor(mutation.function.name, mutation.function.arguments ?? {}, accountNames);
-      return { message: proposedMessage(pending), trace, pendingConfirmation: pending };
+      const pending = confirmationFor(mutation.function.name, mutation.function.arguments ?? {}, accountNames, quoteNumbers);
+      return { message: combinedMessage(proposedMessage(pending)), trace, pendingConfirmation: pending };
     }
 
     for (const call of calls) {
@@ -201,9 +224,10 @@ export async function runAgentTurn(
           if (typeof account.id === "string" && typeof account.name === "string") accountNames.set(account.id, account.name);
         }
       }
+      rememberResult(result);
       messages.push({ role: "tool", tool_name: call.function.name, content: JSON.stringify(result) });
     }
   }
 
-  return { message: latestText, trace, pendingConfirmation: null };
+  return { message: combinedMessage(latestText), trace, pendingConfirmation: null };
 }
