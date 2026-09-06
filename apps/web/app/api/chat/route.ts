@@ -23,7 +23,10 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await runAgentTurn(input as unknown as RunAgentTurnInput, gateway, { runId: input.conversationId });
+    const result = await runAgentTurn(input as unknown as RunAgentTurnInput, gateway, {
+      runId: input.conversationId,
+      ...(process.env.OLLAMA_URL ? { ollamaUrl: process.env.OLLAMA_URL } : {}),
+    });
     return Response.json(result);
   } catch (err) {
     console.error("Agent turn failed:", err);
