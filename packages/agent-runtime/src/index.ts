@@ -89,17 +89,19 @@ function confirmationFor(
   toolName: string,
   args: Record<string, unknown>,
   accountNames: Map<string, string>,
-  quoteNumbers: Map<string, string>
+  quoteNumbers: Map<string, string>,
+  productNames: Map<string, string>
 ): PendingConfirmation {
   const account = () => accountNames.get(String(args.accountId)) ?? display(args.accountId);
   const quote = () => quoteNumbers.get(String(args.quoteId)) ?? display(args.quoteId);
+  const product = () => productNames.get(String(args.productId)) ?? display(args.productId);
   switch (toolName) {
     case "create_initial_quote":
       return { toolName, args, summary: { title: "Ready to create initial quote", lines: [`Account: ${account()}`, `Term: ${display(args.termMonths)} months`], confirmLabel: "Create quote", cancelLabel: "Cancel" } };
     case "create_renewal_quote":
       return { toolName, args, summary: { title: "Ready to create renewal quote", lines: [`Account: ${account()}`, `Term: ${display(args.termMonths)} months`, `Effective date: ${display(args.effectiveDate)}`], confirmLabel: "Create renewal", cancelLabel: "Cancel" } };
     case "add_quote_line":
-      return { toolName, args, summary: { title: "Ready to add quote line", lines: [`Quote: ${quote()}`, `Product: ${display(args.productId)}`, `Quantity: ${display(args.quantity)}`], confirmLabel: "Add line item", cancelLabel: "Cancel" } };
+      return { toolName, args, summary: { title: "Ready to add quote line", lines: [`Quote: ${quote()}`, `Product: ${product()}`, `Quantity: ${display(args.quantity)}`], confirmLabel: "Add line item", cancelLabel: "Cancel" } };
     case "apply_discount":
       return { toolName, args, summary: { title: "Ready to apply discount", lines: [`Quote: ${quote()}`, `Quote line: ${display(args.quoteLineId)}`, `Discount: ${display(args.discountPercent)}%`], confirmLabel: "Apply discount", cancelLabel: "Cancel", ...(evaluateDiscount(args.discountPercent as number).decision === "approval_required" ? { requiresApproverName: true } : {}) } };
     default:
@@ -159,6 +161,7 @@ export async function runAgentTurn(
   const trace: AgentTraceEntry[] = [];
   const accountNames = new Map<string, string>();
   const quoteNumbers = new Map<string, string>();
+  const productNames = new Map<string, string>();
   let latestText = "";
   let confirmedMessage = "";
 
@@ -213,7 +216,7 @@ export async function runAgentTurn(
 
     const mutation = calls.find((call) => MUTATION_TOOLS.has(call.function.name));
     if (mutation) {
-      const pending = confirmationFor(mutation.function.name, mutation.function.arguments ?? {}, accountNames, quoteNumbers);
+      const pending = confirmationFor(mutation.function.name, mutation.function.arguments ?? {}, accountNames, quoteNumbers, productNames);
       return { message: combinedMessage(proposedMessage(pending)), trace, pendingConfirmation: pending };
     }
 
@@ -224,6 +227,11 @@ export async function runAgentTurn(
       if (call.function.name === "find_account" && result.ok && Array.isArray(result.data)) {
         for (const account of result.data as Array<Record<string, unknown>>) {
           if (typeof account.id === "string" && typeof account.name === "string") accountNames.set(account.id, account.name);
+        }
+      }
+      if (call.function.name === "search_products" && result.ok && Array.isArray(result.data)) {
+        for (const product of result.data as Array<Record<string, unknown>>) {
+          if (typeof product.id === "string" && typeof product.name === "string") productNames.set(product.id, product.name);
         }
       }
       rememberResult(result);

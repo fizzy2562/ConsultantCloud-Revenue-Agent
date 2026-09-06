@@ -1,6 +1,12 @@
 "use client";
 
-import type { TraceEntry } from "../lib/mockConversation";
+type TraceEntry = {
+  tool: string;
+  badge: "READ" | "WRITE" | "GATE";
+  durationMs: number;
+  blocked: boolean;
+  summary: string;
+};
 
 export function ToolTracePanel({
   entries,

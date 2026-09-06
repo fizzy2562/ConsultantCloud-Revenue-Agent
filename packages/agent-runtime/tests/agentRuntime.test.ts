@@ -161,6 +161,35 @@ describe("agent runtime", () => {
     expect(result.pendingConfirmation?.summary.lines).not.toContain(`Quote: ${quoteId}`);
   });
 
+  it("uses a known product name in a mutation confirmation", async () => {
+    const productId = "01t000000000002AAA";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(ollamaResponse({
+        role: "assistant",
+        content: "",
+        tool_calls: [{ function: { name: "search_products", arguments: { query: "Cloud Pro" } } }],
+      }))
+      .mockResolvedValueOnce(ollamaResponse({
+        role: "assistant",
+        content: "",
+        tool_calls: [{
+          function: {
+            name: "add_quote_line",
+            arguments: { quoteId: "a0Q000000000001AAA", productId, quantity: 10 },
+          },
+        }],
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runAgentTurn(
+      { kind: "message", text: "Add ten Cloud Pro licenses", history: [] },
+      new MockRevenueGateway()
+    );
+
+    expect(result.pendingConfirmation?.summary.lines).toContain("Product: Cloud Pro");
+    expect(result.pendingConfirmation?.summary.lines).not.toContain(`Product: ${productId}`);
+  });
+
   it("marks only approval-band discount confirmations as requiring an approver name", async () => {
     const pendingFor = async (toolName: string, args: Record<string, unknown>) => {
       vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
