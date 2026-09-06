@@ -67,6 +67,75 @@ describe("agent runtime", () => {
     expect(JSON.parse(secondRequest.messages.at(-1).content).data[0].name).toBe("Acme University");
   });
 
+  it("resolves a display quote number before executing a read with quoteId", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(ollamaResponse({
+        role: "assistant",
+        content: "",
+        tool_calls: [{ function: { name: "get_quote_summary", arguments: { quoteId: "Q-10000" } } }],
+      }))
+      .mockResolvedValueOnce(ollamaResponse({ role: "assistant", content: "Quote found." }));
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new MockRevenueGateway();
+    const quoteSpy = vi.spyOn(gateway, "getQuoteSummary");
+
+    const result = await runAgentTurn(
+      { kind: "message", text: "Show quote Q-10000", history: [] },
+      gateway
+    );
+
+    expect(result.message).toBe("Quote found.");
+    expect(quoteSpy).toHaveBeenNthCalledWith(1, { quoteNumber: "Q-10000" });
+    expect(quoteSpy).toHaveBeenNthCalledWith(2, { quoteId: "a0Q000000000001AAA" });
+  });
+
+  it("stores a resolved quote ID in a mutation confirmation and uses it when confirmed", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
+      role: "assistant",
+      content: "",
+      tool_calls: [{
+        function: {
+          name: "add_quote_line",
+          arguments: { quoteId: "Q-10000", productId: "01t000000000002AAA", quantity: 2 },
+        },
+      }],
+    })));
+    const gateway = new MockRevenueGateway();
+    const addLineSpy = vi.spyOn(gateway, "addQuoteLine");
+
+    const proposed = await runAgentTurn(
+      { kind: "message", text: "Add two Cloud Pro licenses to Q-10000", history: [] },
+      gateway
+    );
+
+    expect(proposed.pendingConfirmation?.args.quoteId).toBe("a0Q000000000001AAA");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "Done." })));
+    await runAgentTurn(
+      { kind: "confirm", pending: proposed.pendingConfirmation!, history: [] },
+      gateway
+    );
+    expect(addLineSpy).toHaveBeenCalledWith(expect.objectContaining({ quoteId: "a0Q000000000001AAA" }));
+  });
+
+  it("passes a Salesforce quote ID through without an extra lookup", async () => {
+    const quoteId = "a0Q000000000001AAA";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(ollamaResponse({
+        role: "assistant",
+        content: "",
+        tool_calls: [{ function: { name: "get_quote_summary", arguments: { quoteId } } }],
+      }))
+      .mockResolvedValueOnce(ollamaResponse({ role: "assistant", content: "Done." }));
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new MockRevenueGateway();
+    const quoteSpy = vi.spyOn(gateway, "getQuoteSummary");
+
+    await runAgentTurn({ kind: "message", text: "Show the quote", history: [] }, gateway);
+
+    expect(quoteSpy).toHaveBeenCalledOnce();
+    expect(quoteSpy).toHaveBeenCalledWith({ quoteId });
+  });
+
   it("turns a model-requested mutation into a pending confirmation without executing it", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
       role: "assistant",

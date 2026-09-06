@@ -85,13 +85,19 @@ function display(value: unknown): string {
   return typeof value === "string" || typeof value === "number" ? String(value) : "Not specified";
 }
 
-function confirmationFor(
+async function confirmationFor(
+  client: Client,
   toolName: string,
   args: Record<string, unknown>,
   accountNames: Map<string, string>,
   quoteNumbers: Map<string, string>,
   productNames: Map<string, string>
-): PendingConfirmation {
+): Promise<PendingConfirmation> {
+  const pendingArgs = { ...args };
+  if ((toolName === "add_quote_line" || toolName === "apply_discount") && typeof pendingArgs.quoteId === "string") {
+    pendingArgs.quoteId = await resolveQuoteId(client, pendingArgs.quoteId);
+  }
+  args = pendingArgs;
   const account = () => accountNames.get(String(args.accountId)) ?? display(args.accountId);
   const quote = () => quoteNumbers.get(String(args.quoteId)) ?? display(args.quoteId);
   const product = () => productNames.get(String(args.productId)) ?? display(args.productId);
@@ -144,6 +150,19 @@ async function callRevenueTool(client: Client, name: string, args: Record<string
   return { result: parseToolResult(raw), durationMs: Date.now() - started };
 }
 
+function looksLikeSalesforceId(value: string): boolean {
+  return /^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/.test(value);
+}
+
+async function resolveQuoteId(client: Client, candidate: string): Promise<string> {
+  if (looksLikeSalesforceId(candidate)) return candidate;
+  const { result } = await callRevenueTool(client, "get_quote_summary", { quoteNumber: candidate });
+  if (result.ok && typeof (result.data as { quoteId?: unknown })?.quoteId === "string") {
+    return (result.data as { quoteId: string }).quoteId;
+  }
+  return candidate;
+}
+
 export async function runAgentTurn(
   input: RunAgentTurnInput,
   gateway: RevenueGateway,
@@ -179,7 +198,9 @@ export async function runAgentTurn(
     if (!MUTATION_TOOLS.has(input.pending.toolName)) {
       throw new Error(`Cannot confirm non-mutation tool: ${input.pending.toolName}`);
     }
-    const args = { ...input.pending.args, confirmedByUser: true, idempotencyKey: crypto.randomUUID(), ...(input.approverName ? { approvedBy: input.approverName } : {}) };
+    const pendingArgs = { ...input.pending.args };
+    if (typeof pendingArgs.quoteId === "string") pendingArgs.quoteId = await resolveQuoteId(client, pendingArgs.quoteId);
+    const args = { ...pendingArgs, confirmedByUser: true, idempotencyKey: crypto.randomUUID(), ...(input.approverName ? { approvedBy: input.approverName } : {}) };
     const { result, durationMs } = await callRevenueTool(client, input.pending.toolName, args);
     const blocked = !result.ok && (result.error?.code === "DISCOUNT_REJECTED" || result.error?.code === "CONFIRMATION_REQUIRED");
     trace.push({ tool: input.pending.toolName, badge: "WRITE", durationMs, blocked, summary: resultSummary(input.pending.toolName, result) });
@@ -216,12 +237,13 @@ export async function runAgentTurn(
 
     const mutation = calls.find((call) => MUTATION_TOOLS.has(call.function.name));
     if (mutation) {
-      const pending = confirmationFor(mutation.function.name, mutation.function.arguments ?? {}, accountNames, quoteNumbers, productNames);
+      const pending = await confirmationFor(client, mutation.function.name, mutation.function.arguments ?? {}, accountNames, quoteNumbers, productNames);
       return { message: combinedMessage(proposedMessage(pending)), trace, pendingConfirmation: pending };
     }
 
     for (const call of calls) {
-      const args = call.function.arguments ?? {};
+      const args = { ...(call.function.arguments ?? {}) };
+      if (typeof args.quoteId === "string") args.quoteId = await resolveQuoteId(client, args.quoteId);
       const { result, durationMs } = await callRevenueTool(client, call.function.name, args);
       trace.push({ tool: call.function.name, badge: "READ", durationMs, blocked: false, summary: resultSummary(call.function.name, result) });
       if (call.function.name === "find_account" && result.ok && Array.isArray(result.data)) {
