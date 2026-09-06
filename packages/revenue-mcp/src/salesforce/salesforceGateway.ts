@@ -75,6 +75,40 @@ export class SalesforceRevenueGateway implements RevenueGateway {
     }
   }
 
+  async getAccountById(input: AccountIdInput): Promise<ToolResult<AccountSummary>> {
+    try {
+      const records = await this.conn.query<{
+        Id: string;
+        Name: string;
+        Industry: string | null;
+      }>(`SELECT Id, Name, Industry FROM Account WHERE Id = '${escapeSoql(input.accountId)}'`);
+      const account = records.records[0];
+      if (!account) {
+        return {
+          ok: false,
+          error: { code: "NOT_FOUND", message: "Account not found", retryable: false },
+          meta: meta(),
+        };
+      }
+      return {
+        ok: true,
+        data: {
+          id: account.Id,
+          name: account.Name,
+          industry: account.Industry ?? "Unknown",
+          existingDiscountPercent: null,
+        },
+        meta: meta(),
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: { code: "SALESFORCE_ERROR", message: String(err), retryable: true },
+        meta: meta(),
+      };
+    }
+  }
+
   async getAccountAssets(input: AccountIdInput): Promise<ToolResult<AccountAsset[]>> {
     try {
       const { isSuccess, outputValues } = await invokeFlowAction(this.conn, "quotingAI__getAccountAssets", {
@@ -436,13 +470,23 @@ export class SalesforceRevenueGateway implements RevenueGateway {
   }
 
   async getQuoteSummary(input: QuoteIdInput): Promise<ToolResult<QuoteSummary>> {
+    if (!input.quoteId && !input.quoteNumber) {
+      return {
+        ok: false,
+        error: { code: "INVALID_INPUT", message: "quoteId or quoteNumber is required", retryable: false },
+        meta: meta(),
+      };
+    }
     try {
+      const filter = input.quoteId
+        ? `Id = '${escapeSoql(input.quoteId)}'`
+        : `QuoteNumber = '${escapeSoql(input.quoteNumber!)}'`;
       const quoteRecords = await this.conn.query<{
         Id: string;
         QuoteNumber: string;
         AccountId: string;
         Status: string;
-      }>(`SELECT Id, QuoteNumber, AccountId, Status FROM Quote WHERE Id = '${escapeSoql(input.quoteId)}'`);
+      }>(`SELECT Id, QuoteNumber, AccountId, Status FROM Quote WHERE ${filter}`);
       if (quoteRecords.records.length === 0) {
         return {
           ok: false,
@@ -463,7 +507,7 @@ export class SalesforceRevenueGateway implements RevenueGateway {
         Quantity: number | null;
         Discount: number | null;
         TotalPrice: number | null;
-      }>(`SELECT Product2.Name, Quantity, Discount, TotalPrice FROM QuoteLineItem WHERE QuoteId = '${escapeSoql(input.quoteId)}'`);
+      }>(`SELECT Product2.Name, Quantity, Discount, TotalPrice FROM QuoteLineItem WHERE QuoteId = '${escapeSoql(quote.Id)}'`);
       const lines = lineRecords.records.map((l) => ({
         productName: l.Product2?.Name ?? null,
         quantity: l.Quantity ?? null,

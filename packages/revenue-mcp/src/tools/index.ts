@@ -1,5 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { RevenueGateway, FindAccountInputSchema, AccountIdInputSchema, ProductSearchInputSchema, QuoteIdInputSchema, ToolResultSchema, FindAccountOutputSchema, AccountAssetsOutputSchema, ProductSearchOutputSchema, QuoteSummarySchema } from "@consultantcloud/shared";
+import { RevenueGateway, FindAccountInputSchema, AccountIdInputSchema, ProductSearchInputSchema, QuoteIdInputSchema, ToolResultSchema, FindAccountOutputSchema, AccountSummarySchema, AccountAssetsOutputSchema, ProductSearchOutputSchema, QuoteSummarySchema } from "@consultantcloud/shared";
 import type { ToolCallEvent } from "@consultantcloud/shared";
 import { z, type ZodTypeAny } from "zod";
 import { logToolCallEvent } from "@consultantcloud/telemetry";
@@ -32,12 +32,18 @@ export function registerFindAccount(server: McpServer, gateway: RevenueGateway, 
 }
 
 export function registerGetAccountRevenueContext(server: McpServer, gateway: RevenueGateway, logger: EventLogger): void {
-  server.registerTool("get_account_revenue_context", { title: "Get Account Revenue Context", description: "Returns an account's existing assets (quantities, product names, and status). It does not return discounts or contract terms. Use this after you have resolved an accountId via find_account. This tool is read-only and never modifies any data. No confirmation is required to call it. If the account has no recorded assets, it returns an empty list.", inputSchema: AccountIdInputSchema.shape }, async (args) => {
+  server.registerTool("get_account_revenue_context", { title: "Get Account Revenue Context", description: "Returns an account summary, including its existing discount when available, together with its existing assets (quantities, product names, and status). It does not return contract terms such as term length; those require a specific quote. Use this after you have resolved an accountId via find_account. This tool is read-only and never modifies any data. No confirmation is required to call it. If the account has no recorded assets, it returns an empty list.", inputSchema: AccountIdInputSchema.shape }, async (args) => {
     try {
-      // Resolving discounts or commercial terms by account ID requires a RevenueGateway method that is not yet defined.
+      const accountResult = await gateway.getAccountById!(args);
+      if (!accountResult.ok) {
+        return respond(logger, "get_account_revenue_context", validateResult(z.object({ account: AccountSummarySchema, assets: AccountAssetsOutputSchema }), accountResult));
+      }
       const assetsResult = await gateway.getAccountAssets(args);
-      const rawResult = { ok: assetsResult.ok, data: assetsResult.ok ? { assets: assetsResult.data } : undefined, error: assetsResult.error, meta: assetsResult.meta };
-      return respond(logger, "get_account_revenue_context", validateResult(z.object({ assets: AccountAssetsOutputSchema }), rawResult));
+      if (!assetsResult.ok) {
+        return respond(logger, "get_account_revenue_context", validateResult(z.object({ account: AccountSummarySchema, assets: AccountAssetsOutputSchema }), assetsResult));
+      }
+      const rawResult = { ok: true as const, data: { account: accountResult.data, assets: assetsResult.data }, meta: assetsResult.meta };
+      return respond(logger, "get_account_revenue_context", validateResult(z.object({ account: AccountSummarySchema, assets: AccountAssetsOutputSchema }), rawResult));
     } catch (err) {
       logToolCallEvent(logger, { requestId: crypto.randomUUID(), runId: crypto.randomUUID(), toolName: "get_account_revenue_context", durationMs: 0, status: "error", timestamp: new Date().toISOString() });
       throw err;
@@ -68,7 +74,7 @@ export function registerGetAccountAssets(server: McpServer, gateway: RevenueGate
 }
 
 export function registerGetQuoteSummary(server: McpServer, gateway: RevenueGateway, logger: EventLogger): void {
-  server.registerTool("get_quote_summary", { title: "Get Quote Summary", description: "Returns a summary of an existing quote by its quote id. Use this to review the line items, totals, and status of a quote before presenting it to a customer. This tool is read-only and never modifies any data. No confirmation is required to call it. It never invents a quote: if no quote with the given id exists, it returns an error rather than guessing or fabricating a plausible-looking quote.", inputSchema: QuoteIdInputSchema.shape }, async (args) => {
+  server.registerTool("get_quote_summary", { title: "Get Quote Summary", description: "Returns a summary of an existing quote by either its internal quoteId or human-readable quoteNumber. Use this to review the line items, totals, and status of a quote before presenting it to a customer. This tool is read-only and never modifies any data. No confirmation is required to call it. It never invents a quote: if no matching quote exists, it returns an error rather than guessing or fabricating a plausible-looking quote.", inputSchema: QuoteIdInputSchema.shape }, async (args) => {
     try {
       return respond(logger, "get_quote_summary", validateResult(QuoteSummarySchema, await gateway.getQuoteSummary(args)));
     } catch (err) {

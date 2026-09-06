@@ -46,6 +46,7 @@ export type DiscountResult = z.infer<typeof DiscountResultSchema>;
 
 export interface RevenueGateway {
   findAccount(input: FindAccountInput): Promise<ToolResult<AccountSummary[]>>;
+  getAccountById?(input: AccountIdInput): Promise<ToolResult<AccountSummary>>;
   getAccountAssets(input: AccountIdInput): Promise<ToolResult<AccountAsset[]>>;
   searchProducts(input: ProductSearchInput): Promise<ToolResult<ProductSummary[]>>;
   createInitialQuote(input: CreateInitialQuoteInput): Promise<ToolResult<QuoteResult>>;

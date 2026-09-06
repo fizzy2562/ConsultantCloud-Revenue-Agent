@@ -85,6 +85,18 @@ export class MockRevenueGateway implements RevenueGateway {
     return { ok: true, data: matches, meta: this.meta() };
   }
 
+  async getAccountById(input: AccountIdInput): Promise<ToolResult<AccountSummary>> {
+    const account = accounts.find((candidate) => candidate.id === input.accountId);
+    if (!account) {
+      return {
+        ok: false,
+        error: { code: "NOT_FOUND", message: "Account not found", retryable: false },
+        meta: this.meta(),
+      };
+    }
+    return { ok: true, data: account, meta: this.meta() };
+  }
+
   async getAccountAssets(input: AccountIdInput): Promise<ToolResult<AccountAsset[]>> {
     const assets = accountAssets[input.accountId] ?? [];
     const data: AccountAsset[] = assets.map((asset) => {
@@ -228,7 +240,16 @@ export class MockRevenueGateway implements RevenueGateway {
   }
 
   async getQuoteSummary(input: QuoteIdInput): Promise<ToolResult<QuoteSummary>> {
-    const quote = this.quotes.get(input.quoteId);
+    if (!input.quoteId && !input.quoteNumber) {
+      return {
+        ok: false,
+        error: { code: "INVALID_INPUT", message: "quoteId or quoteNumber is required", retryable: false },
+        meta: this.meta(),
+      };
+    }
+    const quote = input.quoteId
+      ? this.quotes.get(input.quoteId)
+      : Array.from(this.quotes.values()).find((candidate) => candidate.quoteNumber === input.quoteNumber);
     if (!quote) {
       return {
         ok: false,

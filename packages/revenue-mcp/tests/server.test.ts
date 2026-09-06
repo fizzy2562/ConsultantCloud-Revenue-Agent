@@ -69,4 +69,16 @@ describe("Revenue MCP server", () => {
     expect(parsed.ok).toBe(true);
     expect(parsed.data.length).toBe(3);
   });
+
+  it("get_account_revenue_context returns the account and its assets", async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({ name: "get_account_revenue_context", arguments: { accountId: "001000000000001AAA" } }, CallToolResultSchema) as TextToolResult;
+    const first = result.content[0];
+    if (!first || first.type !== "text") throw new Error("expected text content");
+    const parsed = JSON.parse(first.text);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data.account.name).toBe("Acme University");
+    expect(parsed.data.account.existingDiscountPercent).toBe(12);
+    expect(parsed.data.assets.length).toBeGreaterThan(0);
+  });
 });

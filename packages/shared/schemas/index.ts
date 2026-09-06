@@ -1,23 +1,23 @@
 import { z } from "zod";
 
 export function ToolResultSchema<T extends z.ZodTypeAny>(dataSchema: T) {
-  return z.object({
-    ok: z.boolean(),
-    data: dataSchema.optional(),
-    error: z
-      .object({
-        code: z.string(),
-        message: z.string(),
-        retryable: z.boolean(),
-      })
-      .optional(),
-    meta: z.object({
-      requestId: z.string(),
-      durationMs: z.number(),
-      source: z.enum(["salesforce", "policy", "mock"]),
-    }),
-  });
+  return z.discriminatedUnion("ok", [
+    z.object({ ok: z.literal(true), data: dataSchema, meta: ToolResultMetaSchema }),
+    z.object({ ok: z.literal(false), error: ToolResultErrorSchema, meta: ToolResultMetaSchema }),
+  ]);
 }
+
+export const ToolResultErrorSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  retryable: z.boolean(),
+});
+
+export const ToolResultMetaSchema = z.object({
+  requestId: z.string(),
+  durationMs: z.number(),
+  source: z.enum(["salesforce", "policy", "mock"]),
+});
 
 export const FindAccountInputSchema = z
   .object({
@@ -67,7 +67,8 @@ export const ProductSearchOutputSchema = z.array(ProductSummarySchema);
 
 export const QuoteIdInputSchema = z
   .object({
-    quoteId: z.string().min(1),
+    quoteId: z.string().min(1).optional(),
+    quoteNumber: z.string().min(1).optional(),
   })
   .strict();
 
