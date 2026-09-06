@@ -1,0 +1,356 @@
+openapi: 3.0.3
+info:
+  title: ConsultantCloud Revenue Tools
+  version: 0.1.0
+  description: Stateless revenue lookup and quote-management actions for Salesforce Agentforce.
+servers:
+  - url: https://your-consultantcloud-host.example
+    description: Replace with the public HTTPS URL of the deployed web application.
+security:
+  - bearerAuth: []
+paths:
+  /api/tools/find_account:
+    post:
+      operationId: find_account
+      summary: Look up a Salesforce account by name
+      description: Returns accounts whose names partially match the supplied name. Use this before operations that need an account ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FindAccountInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/ToolResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/tools/get_account_revenue_context:
+    post:
+      operationId: get_account_revenue_context
+      summary: Get an account's revenue context
+      description: Returns the account summary, existing discount, and current assets for a resolved account ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountIdInput'
+      responses:
+        '200': { $ref: '#/components/responses/ToolResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/tools/search_products:
+    post:
+      operationId: search_products
+      summary: Search the product catalog
+      description: Finds products by a case-insensitive name or keyword search.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductSearchInput'
+      responses:
+        '200': { $ref: '#/components/responses/ToolResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/tools/get_account_assets:
+    post:
+      operationId: get_account_assets
+      summary: Get assets held by an account
+      description: Returns current asset records for a resolved account ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountIdInput'
+      responses:
+        '200': { $ref: '#/components/responses/ToolResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/tools/get_quote_summary:
+    post:
+      operationId: get_quote_summary
+      summary: Get a quote summary
+      description: Returns an existing quote and its lines using either an internal quote ID or a quote number.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuoteLookupInput'
+      responses:
+        '200': { $ref: '#/components/responses/ToolResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/tools/create_initial_quote:
+    post:
+      operationId: create_initial_quote
+      summary: Create an initial quote
+      description: Creates a quote for an account after Agentforce has obtained explicit user confirmation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInitialQuoteInput'
+      responses:
+        '200': { $ref: '#/components/responses/ToolResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/tools/create_renewal_quote:
+    post:
+      operationId: create_renewal_quote
+      summary: Create a renewal quote
+      description: Creates a renewal quote with an effective date after Agentforce has obtained explicit user confirmation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRenewalQuoteInput'
+      responses:
+        '200': { $ref: '#/components/responses/ToolResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/tools/add_quote_line:
+    post:
+      operationId: add_quote_line
+      summary: Add a product line to a quote
+      description: Adds a product and quantity to an existing quote after Agentforce has obtained explicit user confirmation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddQuoteLineInput'
+      responses:
+        '200': { $ref: '#/components/responses/ToolResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/tools/remove_quote_line:
+    post:
+      operationId: remove_quote_line
+      summary: Remove a line item from a quote
+      description: Deletes an existing quote line after Agentforce has obtained explicit user confirmation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemoveQuoteLineInput'
+      responses:
+        '200': { $ref: '#/components/responses/ToolResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/tools/update_quote_line:
+    post:
+      operationId: update_quote_line
+      summary: Update a quote line's quantity
+      description: Changes the quantity on an existing quote line after Agentforce has obtained explicit user confirmation. Discount changes are handled by apply_discount, not this operation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateQuoteLineInput'
+      responses:
+        '200': { $ref: '#/components/responses/ToolResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/tools/apply_discount:
+    post:
+      operationId: apply_discount
+      summary: Apply a discount to a quote line
+      description: Applies a policy-controlled discount after Agentforce has obtained explicit user confirmation. Discounts above 15 percent also need an approver name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyDiscountInput'
+      responses:
+        '200': { $ref: '#/components/responses/ToolResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+      description: Shared secret from the app's TOOLS_API_KEY environment variable.
+  responses:
+    ToolResult:
+      description: The tool ran. Inspect ok to determine whether the business operation succeeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ToolResult'
+    BadRequest:
+      description: The JSON body is malformed or does not match the operation input.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TransportError' }
+    Unauthorized:
+      description: The bearer token is missing or invalid.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TransportError' }
+    ServerError:
+      description: The bridge is not configured or encountered an unexpected failure.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TransportError' }
+  schemas:
+    FindAccountInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
+    AccountIdInput:
+      type: object
+      additionalProperties: false
+      required: [accountId]
+      properties:
+        accountId: { type: string, minLength: 1 }
+    ProductSearchInput:
+      type: object
+      additionalProperties: false
+      required: [query]
+      properties:
+        query: { type: string }
+    QuoteLookupInput:
+      type: object
+      additionalProperties: false
+      properties:
+        quoteId: { type: string, minLength: 1 }
+        quoteNumber: { type: string, minLength: 1 }
+    CreateInitialQuoteInput:
+      type: object
+      additionalProperties: false
+      required: [accountId, termMonths, idempotencyKey, confirmedByUser]
+      properties:
+        accountId: { type: string, minLength: 1 }
+        termMonths: { type: integer, minimum: 1 }
+        idempotencyKey: { type: string, minLength: 1 }
+        confirmedByUser: { type: boolean }
+    CreateRenewalQuoteInput:
+      type: object
+      additionalProperties: false
+      required: [accountId, termMonths, effectiveDate, idempotencyKey, confirmedByUser]
+      properties:
+        accountId: { type: string, minLength: 1 }
+        termMonths: { type: integer, minimum: 1 }
+        effectiveDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          example: '2026-10-01'
+        idempotencyKey: { type: string, minLength: 1 }
+        confirmedByUser: { type: boolean }
+    AddQuoteLineInput:
+      type: object
+      additionalProperties: false
+      required: [quoteId, productId, quantity, idempotencyKey, confirmedByUser]
+      properties:
+        quoteId: { type: string, minLength: 1 }
+        productId: { type: string, minLength: 1 }
+        quantity: { type: integer, minimum: 1 }
+        idempotencyKey: { type: string, minLength: 1 }
+        confirmedByUser: { type: boolean }
+    RemoveQuoteLineInput:
+      type: object
+      additionalProperties: false
+      required: [quoteLineId, idempotencyKey, confirmedByUser]
+      properties:
+        quoteLineId: { type: string, minLength: 1 }
+        idempotencyKey: { type: string, minLength: 1 }
+        confirmedByUser: { type: boolean }
+    UpdateQuoteLineInput:
+      type: object
+      additionalProperties: false
+      required: [quoteLineId, quantity, idempotencyKey, confirmedByUser]
+      properties:
+        quoteLineId: { type: string, minLength: 1 }
+        quantity: { type: integer, minimum: 1 }
+        idempotencyKey: { type: string, minLength: 1 }
+        confirmedByUser: { type: boolean }
+    ApplyDiscountInput:
+      type: object
+      additionalProperties: false
+      required: [quoteId, quoteLineId, discountPercent, idempotencyKey, confirmedByUser]
+      properties:
+        quoteId: { type: string, minLength: 1 }
+        quoteLineId: { type: string, minLength: 1 }
+        discountPercent: { type: number, minimum: 0, maximum: 100 }
+        idempotencyKey: { type: string, minLength: 1 }
+        confirmedByUser: { type: boolean }
+        approvedBy: { type: string, minLength: 1 }
+    ToolResult:
+      description: Success and business-error variants returned by every MCP tool.
+      oneOf:
+        - $ref: '#/components/schemas/ToolSuccess'
+        - $ref: '#/components/schemas/ToolFailure'
+    ToolSuccess:
+      type: object
+      additionalProperties: false
+      required: [ok, data, meta]
+      properties:
+        ok: { type: boolean, enum: [true] }
+        data:
+          description: Operation-specific result data.
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: array
+              items: { type: object, additionalProperties: true }
+        meta: { $ref: '#/components/schemas/ToolMeta' }
+    ToolFailure:
+      type: object
+      additionalProperties: false
+      required: [ok, error, meta]
+      properties:
+        ok: { type: boolean, enum: [false] }
+        error: { $ref: '#/components/schemas/ToolError' }
+        meta: { $ref: '#/components/schemas/ToolMeta' }
+    ToolError:
+      type: object
+      additionalProperties: false
+      required: [code, message, retryable]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        retryable: { type: boolean }
+    ToolMeta:
+      type: object
+      additionalProperties: false
+      required: [requestId, durationMs, source]
+      properties:
+        requestId: { type: string }
+        durationMs: { type: number }
+        source: { type: string, enum: [salesforce, policy, mock] }
+    TransportError:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        details:
+          type: object
+          additionalProperties: true
