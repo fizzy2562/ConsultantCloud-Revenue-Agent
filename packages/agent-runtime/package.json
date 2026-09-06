@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@consultantcloud/policy": "workspace:*",
     "@consultantcloud/shared": "workspace:*",
     "@consultantcloud/revenue-mcp": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.12.0"

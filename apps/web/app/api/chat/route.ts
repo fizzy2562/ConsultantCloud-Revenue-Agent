@@ -13,8 +13,9 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  const input = body as { kind?: unknown };
+  const input = body as { kind?: unknown; conversationId?: unknown };
   if (
+    typeof input.conversationId !== "string" ||
     typeof input.kind !== "string" ||
     (input.kind !== "message" && input.kind !== "confirm" && input.kind !== "cancel")
   ) {
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await runAgentTurn(input as unknown as RunAgentTurnInput, gateway);
+    const result = await runAgentTurn(input as unknown as RunAgentTurnInput, gateway, { runId: input.conversationId });
     return Response.json(result);
   } catch (err) {
     console.error("Agent turn failed:", err);

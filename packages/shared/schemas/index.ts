@@ -137,6 +137,7 @@ export const ApplyDiscountInputSchema = z
     discountPercent: z.number().min(0).max(100),
     idempotencyKey: z.string().min(1),
     confirmedByUser: z.boolean(),
+    approvedBy: z.string().min(1).optional(),
   })
   .strict();
 

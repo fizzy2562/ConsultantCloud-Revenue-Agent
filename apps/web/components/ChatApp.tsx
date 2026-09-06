@@ -9,12 +9,12 @@ type ChatTurn = { role: "user" | "assistant"; content: string };
 type PendingConfirmation = {
   toolName: string;
   args: Record<string, unknown>;
-  summary: { title: string; lines: string[]; confirmLabel: string; cancelLabel: string };
+  summary: { title: string; lines: string[]; confirmLabel: string; cancelLabel: string; requiresApproverName?: boolean };
 };
 
 type RequestBody =
   | { kind: "message"; text: string; history: ChatTurn[] }
-  | { kind: "confirm"; pending: PendingConfirmation; history: ChatTurn[] }
+  | { kind: "confirm"; pending: PendingConfirmation; history: ChatTurn[]; approverName?: string }
   | { kind: "cancel"; pending: PendingConfirmation; history: ChatTurn[] };
 
 type AgentTraceEntry = {
@@ -39,6 +39,7 @@ const starterPrompts = [
 ];
 
 export function ChatApp() {
+  const [conversationId] = useState(() => crypto.randomUUID());
   const [messages, setMessages] = useState<Array<{ role: "user" | "agent"; text: string }>>([]);
   const [history, setHistory] = useState<ChatTurn[]>([]);
   const [trace, setTrace] = useState<AgentTraceEntry[]>([]);
@@ -53,7 +54,7 @@ export function ChatApp() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, conversationId }),
       });
 
       if (!res.ok) {
@@ -90,9 +91,9 @@ export function ChatApp() {
     sendTurn({ kind: "message", text: trimmed, history: newHistory });
   }
 
-  function handleConfirm() {
+  function handleConfirm(approverName?: string) {
     if (!pendingConfirmation) return;
-    sendTurn({ kind: "confirm", pending: pendingConfirmation, history });
+    sendTurn({ kind: "confirm", pending: pendingConfirmation, history, ...(approverName ? { approverName } : {}) });
   }
 
   function handleCancel() {

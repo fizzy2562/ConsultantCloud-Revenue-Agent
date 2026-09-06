@@ -14,80 +14,80 @@ function validateResult(schema: ZodTypeAny, result: unknown): ResultLike {
   return { ok: false, error: { code: "INVALID_GATEWAY_RESPONSE", message: "Gateway returned a response that doesn't match the expected shape", retryable: false }, meta: candidate?.meta ?? { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" } };
 }
 
-function respond(logger: EventLogger, toolName: string, result: ResultLike) {
-  const event: ToolCallEvent = { requestId: result.meta.requestId, runId: crypto.randomUUID(), toolName, durationMs: result.meta.durationMs, status: result.ok ? "success" : "error", timestamp: new Date().toISOString() };
+function respond(logger: EventLogger, toolName: string, result: ResultLike, runId?: string) {
+  const event: ToolCallEvent = { requestId: result.meta.requestId, runId: runId ?? crypto.randomUUID(), toolName, durationMs: result.meta.durationMs, status: result.ok ? "success" : "error", timestamp: new Date().toISOString() };
   logToolCallEvent(logger, event);
   return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result as unknown as Record<string, unknown> };
 }
 
-export function registerFindAccount(server: McpServer, gateway: RevenueGateway, logger: EventLogger): void {
+export function registerFindAccount(server: McpServer, gateway: RevenueGateway, logger: EventLogger, runId?: string): void {
   server.registerTool("find_account", { title: "Find Account", description: "Looks up an account by name (case-insensitive partial match). Use this first, before any tool that takes an accountId, to resolve a customer's name to their account record. This tool is read-only and never modifies any data. No confirmation is required to call it. It never invents an account: if no fixture account matches, it returns an empty list rather than guessing or fabricating a plausible-looking account.", inputSchema: FindAccountInputSchema.shape }, async (args) => {
     try {
-      return respond(logger, "find_account", validateResult(FindAccountOutputSchema, await gateway.findAccount(args)));
+      return respond(logger, "find_account", validateResult(FindAccountOutputSchema, await gateway.findAccount(args)), runId);
     } catch (err) {
-      logToolCallEvent(logger, { requestId: crypto.randomUUID(), runId: crypto.randomUUID(), toolName: "find_account", durationMs: 0, status: "error", timestamp: new Date().toISOString() });
+      logToolCallEvent(logger, { requestId: crypto.randomUUID(), runId: runId ?? crypto.randomUUID(), toolName: "find_account", durationMs: 0, status: "error", timestamp: new Date().toISOString() });
       throw err;
     }
   });
 }
 
-export function registerGetAccountRevenueContext(server: McpServer, gateway: RevenueGateway, logger: EventLogger): void {
+export function registerGetAccountRevenueContext(server: McpServer, gateway: RevenueGateway, logger: EventLogger, runId?: string): void {
   server.registerTool("get_account_revenue_context", { title: "Get Account Revenue Context", description: "Returns an account summary, including its existing discount when available, together with its existing assets (quantities, product names, and status). It does not return contract terms such as term length; those require a specific quote. Use this after you have resolved an accountId via find_account. This tool is read-only and never modifies any data. No confirmation is required to call it. If the account has no recorded assets, it returns an empty list.", inputSchema: AccountIdInputSchema.shape }, async (args) => {
     try {
       const accountResult = await gateway.getAccountById!(args);
       if (!accountResult.ok) {
-        return respond(logger, "get_account_revenue_context", validateResult(z.object({ account: AccountSummarySchema, assets: AccountAssetsOutputSchema }), accountResult));
+        return respond(logger, "get_account_revenue_context", validateResult(z.object({ account: AccountSummarySchema, assets: AccountAssetsOutputSchema }), accountResult), runId);
       }
       const assetsResult = await gateway.getAccountAssets(args);
       if (!assetsResult.ok) {
-        return respond(logger, "get_account_revenue_context", validateResult(z.object({ account: AccountSummarySchema, assets: AccountAssetsOutputSchema }), assetsResult));
+        return respond(logger, "get_account_revenue_context", validateResult(z.object({ account: AccountSummarySchema, assets: AccountAssetsOutputSchema }), assetsResult), runId);
       }
       const rawResult = { ok: true as const, data: { account: accountResult.data, assets: assetsResult.data }, meta: assetsResult.meta };
-      return respond(logger, "get_account_revenue_context", validateResult(z.object({ account: AccountSummarySchema, assets: AccountAssetsOutputSchema }), rawResult));
+      return respond(logger, "get_account_revenue_context", validateResult(z.object({ account: AccountSummarySchema, assets: AccountAssetsOutputSchema }), rawResult), runId);
     } catch (err) {
-      logToolCallEvent(logger, { requestId: crypto.randomUUID(), runId: crypto.randomUUID(), toolName: "get_account_revenue_context", durationMs: 0, status: "error", timestamp: new Date().toISOString() });
+      logToolCallEvent(logger, { requestId: crypto.randomUUID(), runId: runId ?? crypto.randomUUID(), toolName: "get_account_revenue_context", durationMs: 0, status: "error", timestamp: new Date().toISOString() });
       throw err;
     }
   });
 }
 
-export function registerSearchProducts(server: McpServer, gateway: RevenueGateway, logger: EventLogger): void {
+export function registerSearchProducts(server: McpServer, gateway: RevenueGateway, logger: EventLogger, runId?: string): void {
   server.registerTool("search_products", { title: "Search Products", description: "Searches the product catalog by name or keyword (case-insensitive partial match). Use this to discover which products are available before building a quote or comparing options. This tool is read-only and never modifies any data. No confirmation is required to call it. It never invents a product: if no catalog entry matches, it returns an empty list rather than guessing or fabricating a plausible-looking product.", inputSchema: ProductSearchInputSchema.shape }, async (args) => {
     try {
-      return respond(logger, "search_products", validateResult(ProductSearchOutputSchema, await gateway.searchProducts(args)));
+      return respond(logger, "search_products", validateResult(ProductSearchOutputSchema, await gateway.searchProducts(args)), runId);
     } catch (err) {
-      logToolCallEvent(logger, { requestId: crypto.randomUUID(), runId: crypto.randomUUID(), toolName: "search_products", durationMs: 0, status: "error", timestamp: new Date().toISOString() });
+      logToolCallEvent(logger, { requestId: crypto.randomUUID(), runId: runId ?? crypto.randomUUID(), toolName: "search_products", durationMs: 0, status: "error", timestamp: new Date().toISOString() });
       throw err;
     }
   });
 }
 
-export function registerGetAccountAssets(server: McpServer, gateway: RevenueGateway, logger: EventLogger): void {
+export function registerGetAccountAssets(server: McpServer, gateway: RevenueGateway, logger: EventLogger, runId?: string): void {
   server.registerTool("get_account_assets", { title: "Get Account Assets", description: "Returns the list of assets currently held by an account. Use this when you need the specific asset records for an account you have already resolved via find_account. This tool is read-only and never modifies any data. No confirmation is required to call it. It never invents an asset: if the account has no recorded assets, it returns an empty list rather than guessing or fabricating plausible-looking holdings.", inputSchema: AccountIdInputSchema.shape }, async (args) => {
     try {
-      return respond(logger, "get_account_assets", validateResult(AccountAssetsOutputSchema, await gateway.getAccountAssets(args)));
+      return respond(logger, "get_account_assets", validateResult(AccountAssetsOutputSchema, await gateway.getAccountAssets(args)), runId);
     } catch (err) {
-      logToolCallEvent(logger, { requestId: crypto.randomUUID(), runId: crypto.randomUUID(), toolName: "get_account_assets", durationMs: 0, status: "error", timestamp: new Date().toISOString() });
+      logToolCallEvent(logger, { requestId: crypto.randomUUID(), runId: runId ?? crypto.randomUUID(), toolName: "get_account_assets", durationMs: 0, status: "error", timestamp: new Date().toISOString() });
       throw err;
     }
   });
 }
 
-export function registerGetQuoteSummary(server: McpServer, gateway: RevenueGateway, logger: EventLogger): void {
+export function registerGetQuoteSummary(server: McpServer, gateway: RevenueGateway, logger: EventLogger, runId?: string): void {
   server.registerTool("get_quote_summary", { title: "Get Quote Summary", description: "Returns a summary of an existing quote by either its internal quoteId or human-readable quoteNumber. Use this to review the line items, totals, and status of a quote before presenting it to a customer. This tool is read-only and never modifies any data. No confirmation is required to call it. It never invents a quote: if no matching quote exists, it returns an error rather than guessing or fabricating a plausible-looking quote.", inputSchema: QuoteIdInputSchema.shape }, async (args) => {
     try {
-      return respond(logger, "get_quote_summary", validateResult(QuoteSummarySchema, await gateway.getQuoteSummary(args)));
+      return respond(logger, "get_quote_summary", validateResult(QuoteSummarySchema, await gateway.getQuoteSummary(args)), runId);
     } catch (err) {
-      logToolCallEvent(logger, { requestId: crypto.randomUUID(), runId: crypto.randomUUID(), toolName: "get_quote_summary", durationMs: 0, status: "error", timestamp: new Date().toISOString() });
+      logToolCallEvent(logger, { requestId: crypto.randomUUID(), runId: runId ?? crypto.randomUUID(), toolName: "get_quote_summary", durationMs: 0, status: "error", timestamp: new Date().toISOString() });
       throw err;
     }
   });
 }
 
-export function registerReadTools(server: McpServer, gateway: RevenueGateway, logger: EventLogger): void {
-  registerFindAccount(server, gateway, logger);
-  registerGetAccountRevenueContext(server, gateway, logger);
-  registerSearchProducts(server, gateway, logger);
-  registerGetAccountAssets(server, gateway, logger);
-  registerGetQuoteSummary(server, gateway, logger);
+export function registerReadTools(server: McpServer, gateway: RevenueGateway, logger: EventLogger, runId?: string): void {
+  registerFindAccount(server, gateway, logger, runId);
+  registerGetAccountRevenueContext(server, gateway, logger, runId);
+  registerSearchProducts(server, gateway, logger, runId);
+  registerGetAccountAssets(server, gateway, logger, runId);
+  registerGetQuoteSummary(server, gateway, logger, runId);
 }

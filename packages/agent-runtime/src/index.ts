@@ -3,6 +3,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createServer } from "@consultantcloud/revenue-mcp";
 import type { RevenueGateway } from "@consultantcloud/shared";
+import { evaluateDiscount } from "@consultantcloud/policy";
 
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 
@@ -17,7 +18,7 @@ export type AgentTraceEntry = {
 export type PendingConfirmation = {
   toolName: string;
   args: Record<string, unknown>;
-  summary: { title: string; lines: string[]; confirmLabel: string; cancelLabel: string };
+  summary: { title: string; lines: string[]; confirmLabel: string; cancelLabel: string; requiresApproverName?: boolean };
 };
 
 export type AgentTurnResult = {
@@ -28,12 +29,13 @@ export type AgentTurnResult = {
 
 export type RunAgentTurnInput =
   | { kind: "message"; text: string; history: ChatTurn[] }
-  | { kind: "confirm"; pending: PendingConfirmation; history: ChatTurn[] }
+  | { kind: "confirm"; pending: PendingConfirmation; history: ChatTurn[]; approverName?: string }
   | { kind: "cancel"; pending: PendingConfirmation; history: ChatTurn[] };
 
 export interface AgentRuntimeOptions {
   ollamaUrl?: string;
   model?: string;
+  runId?: string;
 }
 
 type ToolEnvelope = {
@@ -62,8 +64,8 @@ const SYSTEM_PROMPT = `You are a commercial assistant for Salesforce Revenue Man
 Use the available tools to retrieve facts and perform requested work. Always resolve an account by name with find_account before calling any tool that needs an accountId. Use get_account_revenue_context and get_account_assets for account context, search_products to resolve products, and get_quote_summary to inspect a quote.
 When the user's request requires creating a quote, adding a line item, or applying a discount, call that tool directly with the real arguments you intend — you do not need to ask the user for permission yourself; a separate confirmation step outside your control handles that. Never invent an account ID, product ID, quote ID, or price — only use values you got from a tool result.`;
 
-async function connectedClient(gateway: RevenueGateway) {
-  const server = createServer(gateway);
+async function connectedClient(gateway: RevenueGateway, options: AgentRuntimeOptions) {
+  const server = createServer(gateway, { runId: options.runId });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "agent-runtime", version: "0.1.0" });
   await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
@@ -99,7 +101,7 @@ function confirmationFor(
     case "add_quote_line":
       return { toolName, args, summary: { title: "Ready to add quote line", lines: [`Quote: ${quote()}`, `Product: ${display(args.productId)}`, `Quantity: ${display(args.quantity)}`], confirmLabel: "Add line item", cancelLabel: "Cancel" } };
     case "apply_discount":
-      return { toolName, args, summary: { title: "Ready to apply discount", lines: [`Quote: ${quote()}`, `Quote line: ${display(args.quoteLineId)}`, `Discount: ${display(args.discountPercent)}%`], confirmLabel: "Apply discount", cancelLabel: "Cancel" } };
+      return { toolName, args, summary: { title: "Ready to apply discount", lines: [`Quote: ${quote()}`, `Quote line: ${display(args.quoteLineId)}`, `Discount: ${display(args.discountPercent)}%`], confirmLabel: "Apply discount", cancelLabel: "Cancel", ...(evaluateDiscount(args.discountPercent as number).decision === "approval_required" ? { requiresApproverName: true } : {}) } };
     default:
       throw new Error(`Unsupported mutation tool: ${toolName}`);
   }
@@ -147,7 +149,7 @@ export async function runAgentTurn(
 ): Promise<AgentTurnResult> {
   if (input.kind === "cancel") return { message: "No changes made.", trace: [], pendingConfirmation: null };
 
-  const client = await connectedClient(gateway);
+  const client = await connectedClient(gateway, options);
   const { tools } = await client.listTools();
   const ollamaTools = tools.map((tool) => ({
     type: "function",
@@ -174,7 +176,7 @@ export async function runAgentTurn(
     if (!MUTATION_TOOLS.has(input.pending.toolName)) {
       throw new Error(`Cannot confirm non-mutation tool: ${input.pending.toolName}`);
     }
-    const args = { ...input.pending.args, confirmedByUser: true, idempotencyKey: crypto.randomUUID() };
+    const args = { ...input.pending.args, confirmedByUser: true, idempotencyKey: crypto.randomUUID(), ...(input.approverName ? { approvedBy: input.approverName } : {}) };
     const { result, durationMs } = await callRevenueTool(client, input.pending.toolName, args);
     const blocked = !result.ok && (result.error?.code === "DISCOUNT_REJECTED" || result.error?.code === "CONFIRMATION_REQUIRED");
     trace.push({ tool: input.pending.toolName, badge: "WRITE", durationMs, blocked, summary: resultSummary(input.pending.toolName, result) });

@@ -85,6 +85,9 @@ importers:
 
   packages/agent-runtime:
     dependencies:
+      '@consultantcloud/policy':
+        specifier: workspace:*
+        version: link:../policy
       '@consultantcloud/revenue-mcp':
         specifier: workspace:*
         version: link:../revenue-mcp

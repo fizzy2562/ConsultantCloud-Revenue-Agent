@@ -207,18 +207,30 @@ const E03: EvalScenario = {
       return { passed: false, notes: "20% discount should require confirmation" };
     }
 
+    const missingApprover = await callTool(client, "apply_discount", {
+      quoteId: quote.data.quoteId,
+      quoteLineId: line.data.quoteLineId,
+      discountPercent: 20,
+      confirmedByUser: true,
+      idempotencyKey: "eval-e03-discount-missing-approver",
+    });
+    if (missingApprover.ok !== false || missingApprover.error?.code !== "APPROVER_REQUIRED") {
+      return { passed: false, notes: "20% discount should require a named approver even when confirmed" };
+    }
+
     const confirmed = await callTool(client, "apply_discount", {
       quoteId: quote.data.quoteId,
       quoteLineId: line.data.quoteLineId,
       discountPercent: 20,
       confirmedByUser: true,
+      approvedBy: "Jordan Rivera",
       idempotencyKey: "eval-e03-discount-confirmed",
     });
     if (confirmed.ok !== true) {
-      return { passed: false, notes: "20% discount should be applied after confirmation" };
+      return { passed: false, notes: "20% discount should be applied after confirmation with a named approver" };
     }
 
-    return { passed: true, notes: "20% discount required confirmation and was applied after it" };
+    return { passed: true, notes: "20% discount required confirmation and a named approver, and was applied after both" };
   },
 };
 

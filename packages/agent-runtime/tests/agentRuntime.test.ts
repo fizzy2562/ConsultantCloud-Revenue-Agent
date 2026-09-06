@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MockRevenueGateway } from "@consultantcloud/shared";
 import { runAgentTurn, type PendingConfirmation } from "../src/index.js";
+import type { ToolCallEvent } from "@consultantcloud/shared";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 
 const accountId = "001000000000001AAA";
 
@@ -17,6 +19,26 @@ afterEach(() => {
 });
 
 describe("agent runtime", () => {
+  it("uses one supplied runId across tool calls and falls back to a different generated ID", async () => {
+    const eventFile = "./revenue-mcp-events.jsonl";
+    if (existsSync(eventFile)) unlinkSync(eventFile);
+    const readTurn = () => vi.fn()
+      .mockResolvedValueOnce(ollamaResponse({ role: "assistant", content: "", tool_calls: [{ function: { name: "find_account", arguments: { name: "Acme" } } }] }))
+      .mockResolvedValueOnce(ollamaResponse({ role: "assistant", content: "Done." }));
+
+    vi.stubGlobal("fetch", readTurn());
+    await runAgentTurn({ kind: "message", text: "Find Acme", history: [] }, new MockRevenueGateway(), { runId: "conversation-123" });
+    vi.stubGlobal("fetch", readTurn());
+    await runAgentTurn({ kind: "message", text: "Find Acme again", history: [] }, new MockRevenueGateway(), { runId: "conversation-123" });
+    vi.stubGlobal("fetch", readTurn());
+    await runAgentTurn({ kind: "message", text: "Find Acme separately", history: [] }, new MockRevenueGateway());
+
+    const telemetryEvents = readFileSync(eventFile, "utf8").trim().split("\n").map((line) => JSON.parse(line) as ToolCallEvent);
+    unlinkSync(eventFile);
+    expect(telemetryEvents.map((event) => event.runId).slice(0, 2)).toEqual(["conversation-123", "conversation-123"]);
+    expect(telemetryEvents[2]?.runId).not.toBe("conversation-123");
+  });
+
   it("executes read tools and feeds their real results back to the model", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(ollamaResponse({
@@ -137,6 +159,43 @@ describe("agent runtime", () => {
 
     expect(result.pendingConfirmation?.summary.lines).toContain("Quote: Q-10000");
     expect(result.pendingConfirmation?.summary.lines).not.toContain(`Quote: ${quoteId}`);
+  });
+
+  it("marks only approval-band discount confirmations as requiring an approver name", async () => {
+    const pendingFor = async (toolName: string, args: Record<string, unknown>) => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
+        role: "assistant",
+        content: "",
+        tool_calls: [{ function: { name: toolName, arguments: args } }],
+      })));
+      return (await runAgentTurn({ kind: "message", text: "Make a change", history: [] }, new MockRevenueGateway())).pendingConfirmation;
+    };
+
+    expect((await pendingFor("apply_discount", { quoteId: "q", quoteLineId: "ql", discountPercent: 20 }))?.summary.requiresApproverName).toBe(true);
+    expect((await pendingFor("apply_discount", { quoteId: "q", quoteLineId: "ql", discountPercent: 15 }))?.summary.requiresApproverName).toBeUndefined();
+    expect((await pendingFor("create_initial_quote", { accountId, termMonths: 12 }))?.summary.requiresApproverName).toBeUndefined();
+  });
+
+  it("blocks an approval-band discount without an approver and succeeds with one", async () => {
+    const pending: PendingConfirmation = {
+      toolName: "apply_discount",
+      args: { quoteId: "a0Q000000000001AAA", quoteLineId: "a0L000000000001AAA", discountPercent: 20 },
+      summary: { title: "Ready", lines: [], confirmLabel: "Confirm", cancelLabel: "Cancel", requiresApproverName: true },
+    };
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "Done." })));
+    const blockedGateway = new MockRevenueGateway();
+    const blockedSpy = vi.spyOn(blockedGateway, "applyDiscount");
+    const blocked = await runAgentTurn({ kind: "confirm", pending, history: [] }, blockedGateway);
+    expect(blockedSpy).not.toHaveBeenCalled();
+    expect(blocked.message).toContain("manager's name is required");
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "Done." })));
+    const approvedGateway = new MockRevenueGateway();
+    const approvedSpy = vi.spyOn(approvedGateway, "applyDiscount");
+    const approved = await runAgentTurn({ kind: "confirm", pending, history: [], approverName: "Morgan Lee" }, approvedGateway);
+    expect(approvedSpy).toHaveBeenCalledWith(expect.objectContaining({ approvedBy: "Morgan Lee", confirmedByUser: true }));
+    expect(approved.message).toContain("20% discount applied");
   });
 
   it("gates a second mutation proposed after a confirmed mutation", async () => {

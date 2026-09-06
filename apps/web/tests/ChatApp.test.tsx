@@ -106,5 +106,40 @@ describe("ChatApp", () => {
     const secondCallBody = JSON.parse((fetchMock.mock.calls[1]?.[1] as RequestInit).body as string);
     expect(secondCallBody.kind).toBe("confirm");
     expect(secondCallBody.pending.toolName).toBe("create_renewal_quote");
+    expect(secondCallBody.conversationId).toBe(JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string).conversationId);
+  });
+
+  it("requires and submits a manager name for an approval-band discount", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        message: "Approval required.",
+        trace: [],
+        pendingConfirmation: {
+          toolName: "apply_discount",
+          args: { quoteId: "q", quoteLineId: "ql", discountPercent: 20 },
+          summary: {
+            title: "Ready to apply discount",
+            lines: ["Discount: 20%"],
+            confirmLabel: "Apply discount",
+            cancelLabel: "Cancel",
+            requiresApproverName: true,
+          },
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ message: "20% discount applied.", trace: [], pendingConfirmation: null }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ChatApp />);
+    fireEvent.click(screen.getByText("Give Acme University a 20% discount."));
+    const alert = await screen.findByRole("alert");
+    const confirm = within(alert).getByText("Apply discount") as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(within(alert).getByPlaceholderText("Approving manager's name"), { target: { value: "  Morgan Lee  " } });
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const body = JSON.parse((fetchMock.mock.calls[1]?.[1] as RequestInit).body as string);
+    expect(body.approverName).toBe("Morgan Lee");
   });
 });

@@ -5,11 +5,11 @@ import { registerMutationTools } from "./tools/mutations";
 import { RevenueGateway, MockRevenueGateway } from "@consultantcloud/shared";
 import { EventLogger, FileEventSink } from "@consultantcloud/telemetry";
 
-export function createServer(gateway: RevenueGateway): McpServer {
+export function createServer(gateway: RevenueGateway, options?: { runId?: string }): McpServer {
   const server = new McpServer({ name: "consultantcloud-revenue-mcp", version: "0.1.0" });
   const logger = new EventLogger(new FileEventSink("./revenue-mcp-events.jsonl"));
-  registerReadTools(server, gateway, logger);
-  registerMutationTools(server, gateway, logger);
+  registerReadTools(server, gateway, logger, options?.runId);
+  registerMutationTools(server, gateway, logger, options?.runId);
   return server;
 }
 
