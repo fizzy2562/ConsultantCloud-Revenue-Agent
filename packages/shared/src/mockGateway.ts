@@ -8,6 +8,7 @@ import {
   ProductSummary,
   CreateInitialQuoteInput,
   CreateRenewalQuoteInput,
+  CreateAmendmentQuoteInput,
   QuoteResult,
   AddQuoteLineInput,
   QuoteLineResult,
@@ -159,6 +160,40 @@ export class MockRevenueGateway implements RevenueGateway {
       accountId: input.accountId,
       status: "Draft",
       termMonths: input.termMonths,
+      lines: [],
+    };
+    this.quotes.set(quoteId, quote);
+    const result: ToolResult<QuoteResult> = {
+      ok: true,
+      data: { quoteId, quoteNumber, status: "Draft" },
+      meta: this.meta(),
+    };
+    this.idempotencyResults.set(input.idempotencyKey, result);
+    return result;
+  }
+
+  async createAmendmentQuote(input: CreateAmendmentQuoteInput): Promise<ToolResult<QuoteResult>> {
+    const existing = this.idempotencyResults.get(input.idempotencyKey);
+    if (existing) {
+      return existing;
+    }
+    const sourceQuote = this.quotes.get(input.sourceQuoteId);
+    if (!sourceQuote) {
+      return {
+        ok: false,
+        error: { code: "NOT_FOUND", message: "Source quote not found", retryable: false },
+        meta: this.meta(),
+      };
+    }
+    const quoteId = `a0Q${crypto.randomUUID()}`;
+    const quoteNumber = `Q-${10000 + this.quoteCounter}`;
+    this.quoteCounter += 1;
+    const quote: StoredQuote = {
+      quoteId,
+      quoteNumber,
+      accountId: input.accountId,
+      status: "Draft",
+      termMonths: sourceQuote.termMonths,
       lines: [],
     };
     this.quotes.set(quoteId, quote);

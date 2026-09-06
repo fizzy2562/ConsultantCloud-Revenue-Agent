@@ -33,6 +33,7 @@ describe("Revenue MCP server", () => {
         "search_products",
         "create_initial_quote",
         "create_renewal_quote",
+        "create_amendment_quote",
         "add_quote_line",
         "remove_quote_line",
         "update_quote_line",

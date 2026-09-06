@@ -107,6 +107,15 @@ export const CreateRenewalQuoteInputSchema = z
   })
   .strict();
 
+export const CreateAmendmentQuoteInputSchema = z
+  .object({
+    accountId: z.string().min(1),
+    sourceQuoteId: z.string().min(1),
+    idempotencyKey: z.string().min(1),
+    confirmedByUser: z.boolean(),
+  })
+  .strict();
+
 export const QuoteResultSchema = z.object({
   quoteId: z.string().min(1),
   quoteNumber: z.string().min(1),

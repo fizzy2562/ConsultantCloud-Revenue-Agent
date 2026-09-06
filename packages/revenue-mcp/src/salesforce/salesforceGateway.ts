@@ -9,6 +9,7 @@ import {
   ProductSummary,
   CreateInitialQuoteInput,
   CreateRenewalQuoteInput,
+  CreateAmendmentQuoteInput,
   QuoteResult,
   AddQuoteLineInput,
   QuoteLineResult,
@@ -370,6 +371,59 @@ export class SalesforceRevenueGateway implements RevenueGateway {
       return {
         ok: true,
         data: { quoteId: renewalQuoteId, quoteNumber, status: quoteStatus },
+        meta: meta(),
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: { code: "SALESFORCE_ERROR", message: String(err), retryable: true },
+        meta: meta(),
+      };
+    }
+  }
+
+  async createAmendmentQuote(input: CreateAmendmentQuoteInput): Promise<ToolResult<QuoteResult>> {
+    try {
+      const { isSuccess, outputValues } = await invokeFlowAction(this.conn, "quotingAI__createAmendQuote", {
+        quoteId: input.sourceQuoteId,
+      });
+      const amendmentQuoteId = (outputValues as { amendmentQuoteId?: string } | null)?.amendmentQuoteId;
+      if (!isSuccess || !amendmentQuoteId) {
+        return {
+          ok: false,
+          error: {
+            code: "QUOTE_CREATION_FAILED",
+            message: ((outputValues as { errorMessage?: string } | null)?.errorMessage as string) ?? "Failed to create amendment quote",
+            retryable: false,
+          },
+          meta: meta(),
+        };
+      }
+      let quoteNumber: string | undefined;
+      let quoteStatus: string | undefined;
+      try {
+        const quoteRecords = await this.conn.query<{ QuoteNumber: string; Status: string }>(
+          `SELECT QuoteNumber, Status FROM Quote WHERE Id = '${escapeSoql(amendmentQuoteId)}'`
+        );
+        quoteNumber = quoteRecords.records[0]?.QuoteNumber;
+        quoteStatus = quoteRecords.records[0]?.Status;
+      } catch {
+        // Return the quote verification error below.
+      }
+      if (!quoteNumber || !quoteStatus) {
+        return {
+          ok: false,
+          error: {
+            code: "QUOTE_CREATION_FAILED",
+            message: "Quote created but could not be verified",
+            retryable: true,
+          },
+          meta: meta(),
+        };
+      }
+      return {
+        ok: true,
+        data: { quoteId: amendmentQuoteId, quoteNumber, status: quoteStatus },
         meta: meta(),
       };
     } catch (err) {

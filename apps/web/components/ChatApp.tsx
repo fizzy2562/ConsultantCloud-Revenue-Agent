@@ -167,6 +167,7 @@ export function ChatApp() {
           </div>
         </div>
         <ToolTracePanel
+          runId={conversationId}
           entries={trace}
           expanded={traceExpanded}
           onToggle={() => setTraceExpanded((v) => !v)}

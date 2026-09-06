@@ -1,6 +1,6 @@
 # Connect the revenue tools to Salesforce Agentforce
 
-This guide connects a Salesforce Agentforce agent to the eleven stateless revenue actions exposed by this app. Agentforce owns the conversation and planning; the app only validates and executes individual tool calls.
+This guide connects a Salesforce Agentforce agent to the twelve stateless revenue actions exposed by this app. Agentforce owns the conversation and planning; the app only validates and executes individual tool calls.
 
 ## 1. Deploy the app
 
@@ -34,7 +34,7 @@ Salesforce Setup labels and screens can vary slightly by release and credential 
 2. Select the Named Credential created above.
 3. Upload or paste [`agentforce-external-service.openapi.yaml`](./agentforce-external-service.openapi.yaml). Before importing, replace the example server URL if your Salesforce wizard uses the `servers` entry; the Named Credential remains the source of authentication.
 4. Name the service, for example `ConsultantCloudRevenueTools`, and complete registration.
-5. Confirm Salesforce discovered all eleven operations: `find_account`, `get_account_revenue_context`, `search_products`, `get_account_assets`, `get_quote_summary`, `create_initial_quote`, `create_renewal_quote`, `add_quote_line`, `remove_quote_line`, `update_quote_line`, and `apply_discount`.
+5. Confirm Salesforce discovered all twelve operations: `find_account`, `get_account_revenue_context`, `search_products`, `get_account_assets`, `get_quote_summary`, `create_initial_quote`, `create_renewal_quote`, `create_amendment_quote`, `add_quote_line`, `remove_quote_line`, `update_quote_line`, and `apply_discount`.
 6. Use the External Services test capability, if available, to call `find_account` with `{ "name": "Acme" }`. A valid request returns HTTP 200; inspect the payload's `ok` field for tool-level success or failure.
 
 ## 5. Add actions to an Agentforce agent
@@ -47,10 +47,10 @@ Salesforce Setup labels and screens can vary slightly by release and credential 
 
 ## Required confirmation instructions for mutations
 
-The six mutation actions—`create_initial_quote`, `create_renewal_quote`, `add_quote_line`, `remove_quote_line`, `update_quote_line`, and `apply_discount`—require `confirmedByUser: true` in the request body to execute. This bridge does not add or infer a separate confirmation mechanism, and Salesforce's planner has no built-in awareness of this project's confirmation semantics.
+The seven mutation actions—`create_initial_quote`, `create_renewal_quote`, `create_amendment_quote`, `add_quote_line`, `remove_quote_line`, `update_quote_line`, and `apply_discount`—require `confirmedByUser: true` in the request body to execute. This bridge does not add or infer a separate confirmation mechanism, and Salesforce's planner has no built-in awareness of this project's confirmation semantics.
 
 Add explicit instructions like these to the Agentforce topic:
 
-> Before invoking create_initial_quote, create_renewal_quote, add_quote_line, remove_quote_line, update_quote_line, or apply_discount, present the exact proposed change and ask the user for explicit confirmation. Invoke the action with confirmedByUser set to true only after the user confirms. If the user declines or has not answered, do not invoke the mutation action. Generate and retain a unique idempotencyKey for the logical operation and reuse that key only when retrying the same operation.
+> Before invoking create_initial_quote, create_renewal_quote, create_amendment_quote, add_quote_line, remove_quote_line, update_quote_line, or apply_discount, present the exact proposed change and ask the user for explicit confirmation. Invoke the action with confirmedByUser set to true only after the user confirms. If the user declines or has not answered, do not invoke the mutation action. Generate and retain a unique idempotencyKey for the logical operation and reuse that key only when retrying the same operation.
 
 For discounts above 15%, the current policy also requires `approvedBy` to contain a manager's name; discounts above 25% are rejected. Confirmation does not bypass those policy rules.

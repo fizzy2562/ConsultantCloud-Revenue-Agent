@@ -9,10 +9,12 @@ type TraceEntry = {
 };
 
 export function ToolTracePanel({
+  runId,
   entries,
   expanded,
   onToggle,
 }: {
+  runId: string;
   entries: TraceEntry[];
   expanded: boolean;
   onToggle: () => void;
@@ -21,9 +23,18 @@ export function ToolTracePanel({
     <div
       className={`cc-trace-panel ${expanded ? "cc-trace-panel--expanded" : "cc-trace-panel--collapsed"}`}
     >
-      <button type="button" className="cc-trace-toggle" onClick={onToggle}>
-        {expanded ? "Hide trace" : "Show trace"}
-      </button>
+      <div className="cc-trace-controls">
+        <button type="button" className="cc-trace-toggle" onClick={onToggle}>
+          {expanded ? "Hide trace" : "Show trace"}
+        </button>
+        <a
+          className="cc-trace-download"
+          href={`/api/runs/${runId}/trace`}
+          download={`trace-${runId}.json`}
+        >
+          Download trace
+        </a>
+      </div>
       <div className="cc-trace-entries">
         {entries.map((entry, index) => (
           <div className="cc-trace-entry" key={index}>

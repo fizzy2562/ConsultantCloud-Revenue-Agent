@@ -33,6 +33,7 @@ class FailingGateway implements RevenueGateway {
   searchProducts: RevenueGateway["searchProducts"] = (input) => this.inner.searchProducts(input);
   createInitialQuote: RevenueGateway["createInitialQuote"] = (input) => this.inner.createInitialQuote(input);
   createRenewalQuote: RevenueGateway["createRenewalQuote"] = (input) => this.inner.createRenewalQuote(input);
+  createAmendmentQuote: RevenueGateway["createAmendmentQuote"] = (input) => this.inner.createAmendmentQuote(input);
   applyDiscount: RevenueGateway["applyDiscount"] = (input) => this.inner.applyDiscount(input);
   getQuoteSummary: RevenueGateway["getQuoteSummary"] = (input) => this.inner.getQuoteSummary(input);
   removeQuoteLine: RevenueGateway["removeQuoteLine"] = (input) => this.inner.removeQuoteLine(input);
@@ -51,6 +52,7 @@ class ReturningFailureGateway implements RevenueGateway {
   searchProducts: RevenueGateway["searchProducts"] = (input) => this.inner.searchProducts(input);
   createInitialQuote: RevenueGateway["createInitialQuote"] = (input) => this.inner.createInitialQuote(input);
   createRenewalQuote: RevenueGateway["createRenewalQuote"] = (input) => this.inner.createRenewalQuote(input);
+  createAmendmentQuote: RevenueGateway["createAmendmentQuote"] = (input) => this.inner.createAmendmentQuote(input);
   applyDiscount: RevenueGateway["applyDiscount"] = (input) => this.inner.applyDiscount(input);
   getQuoteSummary: RevenueGateway["getQuoteSummary"] = (input) => this.inner.getQuoteSummary(input);
   removeQuoteLine: RevenueGateway["removeQuoteLine"] = (input) => this.inner.removeQuoteLine(input);

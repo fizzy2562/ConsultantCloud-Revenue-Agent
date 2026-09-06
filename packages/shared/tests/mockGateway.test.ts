@@ -43,6 +43,45 @@ describe("MockRevenueGateway", () => {
     expect(result1.data!.quoteId).toBe(result2.data!.quoteId);
   });
 
+  it("creates an amendment quote with the source quote term", async () => {
+    const gateway = new MockRevenueGateway();
+    const result = await gateway.createAmendmentQuote({
+      accountId: ACME_UNIVERSITY_ID,
+      sourceQuoteId: "a0Q000000000001AAA",
+      idempotencyKey: "amendment-1",
+      confirmedByUser: true,
+    });
+    expect(result).toMatchObject({ ok: true, data: { status: "Draft" } });
+    if (!result.ok) throw new Error("Expected amendment quote creation to succeed");
+    const summary = await gateway.getQuoteSummary({ quoteId: result.data.quoteId });
+    expect(summary).toMatchObject({ ok: true, data: { termMonths: 36, lines: [] } });
+  });
+
+  it("returns NOT_FOUND when the amendment source quote does not exist", async () => {
+    const result = await new MockRevenueGateway().createAmendmentQuote({
+      accountId: ACME_UNIVERSITY_ID,
+      sourceQuoteId: "missing",
+      idempotencyKey: "amendment-2",
+      confirmedByUser: true,
+    });
+    expect(result).toMatchObject({ ok: false, error: { code: "NOT_FOUND", message: "Source quote not found" } });
+  });
+
+  it("replays an amendment idempotently without creating a second quote", async () => {
+    const gateway = new MockRevenueGateway();
+    const input = {
+      accountId: ACME_UNIVERSITY_ID,
+      sourceQuoteId: "a0Q000000000001AAA",
+      idempotencyKey: "amendment-3",
+      confirmedByUser: true,
+    };
+    const first = await gateway.createAmendmentQuote(input);
+    const second = await gateway.createAmendmentQuote(input);
+    expect(second).toEqual(first);
+    const next = await gateway.createInitialQuote({ accountId: ACME_UNIVERSITY_ID, termMonths: 12, idempotencyKey: "after-amendment", confirmedByUser: true });
+    expect(next).toMatchObject({ ok: true, data: { quoteNumber: "Q-10002" } });
+  });
+
   it("resolves a quote by quoteNumber alone", async () => {
     const gateway = new MockRevenueGateway();
     const result = await gateway.getQuoteSummary({ quoteNumber: "Q-10000" });

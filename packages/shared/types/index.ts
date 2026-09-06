@@ -15,6 +15,7 @@ import {
   QuoteSummarySchema,
   CreateInitialQuoteInputSchema,
   CreateRenewalQuoteInputSchema,
+  CreateAmendmentQuoteInputSchema,
   QuoteResultSchema,
   AddQuoteLineInputSchema,
   QuoteLineResultSchema,
@@ -42,6 +43,7 @@ export type QuoteLineSummary = z.infer<typeof QuoteLineSummarySchema>;
 export type QuoteSummary = z.infer<typeof QuoteSummarySchema>;
 export type CreateInitialQuoteInput = z.infer<typeof CreateInitialQuoteInputSchema>;
 export type CreateRenewalQuoteInput = z.infer<typeof CreateRenewalQuoteInputSchema>;
+export type CreateAmendmentQuoteInput = z.infer<typeof CreateAmendmentQuoteInputSchema>;
 export type QuoteResult = z.infer<typeof QuoteResultSchema>;
 export type AddQuoteLineInput = z.infer<typeof AddQuoteLineInputSchema>;
 export type QuoteLineResult = z.infer<typeof QuoteLineResultSchema>;
@@ -59,6 +61,7 @@ export interface RevenueGateway {
   searchProducts(input: ProductSearchInput): Promise<ToolResult<ProductSummary[]>>;
   createInitialQuote(input: CreateInitialQuoteInput): Promise<ToolResult<QuoteResult>>;
   createRenewalQuote(input: CreateRenewalQuoteInput): Promise<ToolResult<QuoteResult>>;
+  createAmendmentQuote(input: CreateAmendmentQuoteInput): Promise<ToolResult<QuoteResult>>;
   addQuoteLine(input: AddQuoteLineInput): Promise<ToolResult<QuoteLineResult>>;
   removeQuoteLine(input: RemoveQuoteLineInput): Promise<ToolResult<RemoveQuoteLineResult>>;
   updateQuoteLine(input: UpdateQuoteLineInput): Promise<ToolResult<UpdateQuoteLineResult>>;

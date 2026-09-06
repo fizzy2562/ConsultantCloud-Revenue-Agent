@@ -56,13 +56,14 @@ type OllamaMessage = {
 const MUTATION_TOOLS = new Set([
   "create_initial_quote",
   "create_renewal_quote",
+  "create_amendment_quote",
   "add_quote_line",
   "remove_quote_line",
   "update_quote_line",
   "apply_discount",
 ]);
 
-const SYSTEM_PROMPT = `You are a commercial assistant for Salesforce Revenue Management requests involving quotes, renewals, quote line items, and discounts.
+const SYSTEM_PROMPT = `You are a commercial assistant for Salesforce Revenue Management requests involving quotes, renewals, amendments, quote line items, and discounts.
 Use the available tools to retrieve facts and perform requested work. Always resolve an account by name with find_account before calling any tool that needs an accountId. Use get_account_revenue_context and get_account_assets for account context, search_products to resolve products, and get_quote_summary to inspect a quote.
 When the user's request requires creating a quote, adding or removing a line item, updating a line item's quantity, or applying a discount, call that tool directly with the real arguments you intend — you do not need to ask the user for permission yourself; a separate confirmation step outside your control handles that. Never invent an account ID, product ID, quote ID, quote line ID, or price — only use values you got from a tool result.`;
 
@@ -99,6 +100,9 @@ async function confirmationFor(
   if ((toolName === "add_quote_line" || toolName === "apply_discount") && typeof pendingArgs.quoteId === "string") {
     pendingArgs.quoteId = await resolveQuoteId(client, pendingArgs.quoteId);
   }
+  if (toolName === "create_amendment_quote" && typeof pendingArgs.sourceQuoteId === "string") {
+    pendingArgs.sourceQuoteId = await resolveQuoteId(client, pendingArgs.sourceQuoteId);
+  }
   args = pendingArgs;
   const account = () => accountNames.get(String(args.accountId)) ?? display(args.accountId);
   const quote = () => quoteNumbers.get(String(args.quoteId)) ?? display(args.quoteId);
@@ -108,6 +112,8 @@ async function confirmationFor(
       return { toolName, args, summary: { title: "Ready to create initial quote", lines: [`Account: ${account()}`, `Term: ${display(args.termMonths)} months`], confirmLabel: "Create quote", cancelLabel: "Cancel" } };
     case "create_renewal_quote":
       return { toolName, args, summary: { title: "Ready to create renewal quote", lines: [`Account: ${account()}`, `Term: ${display(args.termMonths)} months`, `Effective date: ${display(args.effectiveDate)}`], confirmLabel: "Create renewal", cancelLabel: "Cancel" } };
+    case "create_amendment_quote":
+      return { toolName, args, summary: { title: "Ready to create amendment quote", lines: [`Account: ${account()}`, `Source quote: ${quoteNumbers.get(String(args.sourceQuoteId)) ?? display(args.sourceQuoteId)}`], confirmLabel: "Create amendment", cancelLabel: "Cancel" } };
     case "add_quote_line":
       return { toolName, args, summary: { title: "Ready to add quote line", lines: [`Quote: ${quote()}`, `Product: ${product()}`, `Quantity: ${display(args.quantity)}`], confirmLabel: "Add line item", cancelLabel: "Cancel" } };
     case "remove_quote_line":
@@ -140,6 +146,7 @@ function resultSummary(tool: string, result: ToolEnvelope): string {
   if (tool === "get_account_revenue_context") return "Revenue context retrieved";
   if (tool === "get_quote_summary") return `Quote ${display(!Array.isArray(data) && data?.quoteNumber)} retrieved`;
   if (tool === "create_initial_quote" || tool === "create_renewal_quote") return `Quote ${display(!Array.isArray(data) && data?.quoteNumber)} created`;
+  if (tool === "create_amendment_quote") return `Quote ${display(!Array.isArray(data) && data?.quoteNumber)} created`;
   if (tool === "add_quote_line") return `Quote line ${display(!Array.isArray(data) && data?.quoteLineId)} added`;
   if (tool === "remove_quote_line") return `Quote line ${display(!Array.isArray(data) && data?.quoteLineId)} removed`;
   if (tool === "update_quote_line") return `Quote line ${display(!Array.isArray(data) && data?.quoteLineId)} updated to quantity ${display(!Array.isArray(data) && data?.quantity)}`;
@@ -208,6 +215,7 @@ export async function runAgentTurn(
     }
     const pendingArgs = { ...input.pending.args };
     if (typeof pendingArgs.quoteId === "string") pendingArgs.quoteId = await resolveQuoteId(client, pendingArgs.quoteId);
+    if (typeof pendingArgs.sourceQuoteId === "string") pendingArgs.sourceQuoteId = await resolveQuoteId(client, pendingArgs.sourceQuoteId);
     const args = { ...pendingArgs, confirmedByUser: true, idempotencyKey: crypto.randomUUID(), ...(input.approverName ? { approvedBy: input.approverName } : {}) };
     const { result, durationMs } = await callRevenueTool(client, input.pending.toolName, args);
     const blocked = !result.ok && (result.error?.code === "DISCOUNT_REJECTED" || result.error?.code === "CONFIRMATION_REQUIRED");

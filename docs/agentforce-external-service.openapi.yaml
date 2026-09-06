@@ -125,6 +125,22 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '500': { $ref: '#/components/responses/ServerError' }
+  /api/tools/create_amendment_quote:
+    post:
+      operationId: create_amendment_quote
+      summary: Create an amendment quote
+      description: Creates an amendment quote that copies the term length of an existing active quote for the same account, after Agentforce has obtained explicit user confirmation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAmendmentQuoteInput'
+      responses:
+        '200': { $ref: '#/components/responses/ToolResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /api/tools/add_quote_line:
     post:
       operationId: add_quote_line
@@ -263,6 +279,15 @@ components:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'
           example: '2026-10-01'
+        idempotencyKey: { type: string, minLength: 1 }
+        confirmedByUser: { type: boolean }
+    CreateAmendmentQuoteInput:
+      type: object
+      additionalProperties: false
+      required: [accountId, sourceQuoteId, idempotencyKey, confirmedByUser]
+      properties:
+        accountId: { type: string, minLength: 1 }
+        sourceQuoteId: { type: string, minLength: 1 }
         idempotencyKey: { type: string, minLength: 1 }
         confirmedByUser: { type: boolean }
     AddQuoteLineInput:

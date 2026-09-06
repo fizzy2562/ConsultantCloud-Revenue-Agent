@@ -142,13 +142,31 @@ pre, code {
   max-height: 64px;
 }
 
-.cc-trace-toggle {
+.cc-trace-controls {
   margin: 16px 24px 0;
   align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cc-trace-toggle,
+.cc-trace-download {
   padding: 6px 14px;
   border-radius: 9999px;
   border: 1px solid #d1d5db;
   background-color: #ffffff;
+  color: inherit;
+  font: inherit;
+  line-height: normal;
+  text-decoration: none;
+}
+
+.cc-trace-toggle {
+  cursor: pointer;
+}
+
+.cc-trace-download {
   cursor: pointer;
 }
 

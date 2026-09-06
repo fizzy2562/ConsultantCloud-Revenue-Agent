@@ -1,5 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { RevenueGateway, CreateInitialQuoteInputSchema, CreateRenewalQuoteInputSchema, AddQuoteLineInputSchema, RemoveQuoteLineInputSchema, UpdateQuoteLineInputSchema, ApplyDiscountInputSchema, ToolResultSchema, QuoteResultSchema, QuoteLineResultSchema, RemoveQuoteLineResultSchema, UpdateQuoteLineResultSchema, DiscountResultSchema } from "@consultantcloud/shared";
+import { RevenueGateway, CreateInitialQuoteInputSchema, CreateRenewalQuoteInputSchema, CreateAmendmentQuoteInputSchema, AddQuoteLineInputSchema, RemoveQuoteLineInputSchema, UpdateQuoteLineInputSchema, ApplyDiscountInputSchema, ToolResultSchema, QuoteResultSchema, QuoteLineResultSchema, RemoveQuoteLineResultSchema, UpdateQuoteLineResultSchema, DiscountResultSchema } from "@consultantcloud/shared";
 import type { ToolCallEvent } from "@consultantcloud/shared";
 import type { ZodTypeAny } from "zod";
 import { evaluateDiscount, requireConfirmation, IdempotencyStore, withIdempotency, IdempotencyConflictError } from "@consultantcloud/policy";
@@ -51,6 +51,22 @@ export function registerCreateRenewalQuote(server: McpServer, gateway: RevenueGa
         return respond(logger, "create_renewal_quote", validateResult(QuoteResultSchema, idempotencyConflictResult(err)), { confirmationEvent: args.confirmedByUser ? "confirmed" : "declined" }, runId);
       }
       logToolCallEvent(logger, { requestId: crypto.randomUUID(), runId: runId ?? crypto.randomUUID(), toolName: "create_renewal_quote", durationMs: 0, status: "error", timestamp: new Date().toISOString() });
+      throw err;
+    }
+  });
+}
+
+export function registerCreateAmendmentQuote(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
+  server.registerTool("create_amendment_quote", { title: "Create Amendment Quote", description: "Creates an amendment quote for an account that already has an existing active quote, copying its term length. This mutates Salesforce (or the mock) state: it creates a real quote record. It requires confirmedByUser: true — if the caller has not obtained explicit user confirmation, this tool returns an error rather than creating anything. Repeated calls with the same idempotencyKey are safe and will not create duplicate quotes; the first result is returned again unchanged.", inputSchema: CreateAmendmentQuoteInputSchema.shape }, async (args) => {
+    try {
+      const confirmation = requireConfirmation("create_amendment_quote", { confirmedByUser: args.confirmedByUser });
+      const rawResult = !confirmation.satisfied ? { ok: false, error: { code: "CONFIRMATION_REQUIRED", message: confirmation.reason ?? "Confirmation required", retryable: false }, meta: { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" as const } } : await withIdempotency(store, args.idempotencyKey, JSON.stringify(args), () => gateway.createAmendmentQuote(args), (result) => (result as { ok: boolean }).ok === true);
+      return respond(logger, "create_amendment_quote", validateResult(QuoteResultSchema, rawResult), { confirmationEvent: args.confirmedByUser ? "confirmed" : "declined" }, runId);
+    } catch (err) {
+      if (err instanceof IdempotencyConflictError) {
+        return respond(logger, "create_amendment_quote", validateResult(QuoteResultSchema, idempotencyConflictResult(err)), { confirmationEvent: args.confirmedByUser ? "confirmed" : "declined" }, runId);
+      }
+      logToolCallEvent(logger, { requestId: crypto.randomUUID(), runId: runId ?? crypto.randomUUID(), toolName: "create_amendment_quote", durationMs: 0, status: "error", timestamp: new Date().toISOString() });
       throw err;
     }
   });
@@ -132,12 +148,14 @@ export function registerApplyDiscount(server: McpServer, gateway: RevenueGateway
 export function registerMutationTools(server: McpServer, gateway: RevenueGateway, logger: EventLogger, runId?: string): void {
   const initialQuoteStore = new IdempotencyStore<unknown>();
   const renewalQuoteStore = new IdempotencyStore<unknown>();
+  const amendmentQuoteStore = new IdempotencyStore<unknown>();
   const addLineStore = new IdempotencyStore<unknown>();
   const removeLineStore = new IdempotencyStore<unknown>();
   const updateLineStore = new IdempotencyStore<unknown>();
   const applyDiscountStore = new IdempotencyStore<unknown>();
   registerCreateInitialQuote(server, gateway, logger, initialQuoteStore, runId);
   registerCreateRenewalQuote(server, gateway, logger, renewalQuoteStore, runId);
+  registerCreateAmendmentQuote(server, gateway, logger, amendmentQuoteStore, runId);
   registerAddQuoteLine(server, gateway, logger, addLineStore, runId);
   registerRemoveQuoteLine(server, gateway, logger, removeLineStore, runId);
   registerUpdateQuoteLine(server, gateway, logger, updateLineStore, runId);

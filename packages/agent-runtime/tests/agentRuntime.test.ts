@@ -169,6 +169,49 @@ describe("agent runtime", () => {
     });
   });
 
+  it("gates create_amendment_quote and calls the gateway only after confirmation", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
+      role: "assistant",
+      content: "",
+      tool_calls: [{
+        function: {
+          name: "create_amendment_quote",
+          arguments: { accountId, sourceQuoteId: "Q-10000" },
+        },
+      }],
+    })));
+    const gateway = new MockRevenueGateway();
+    const mutationSpy = vi.spyOn(gateway, "createAmendmentQuote");
+
+    const proposed = await runAgentTurn(
+      { kind: "message", text: "Create an amendment for Q-10000", history: [] },
+      gateway
+    );
+
+    expect(mutationSpy).not.toHaveBeenCalled();
+    expect(proposed.pendingConfirmation).toMatchObject({
+      toolName: "create_amendment_quote",
+      args: { accountId, sourceQuoteId: "a0Q000000000001AAA" },
+      summary: {
+        title: "Ready to create amendment quote",
+        lines: [`Account: ${accountId}`, "Source quote: a0Q000000000001AAA"],
+        confirmLabel: "Create amendment",
+        cancelLabel: "Cancel",
+      },
+    });
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "Done." })));
+    await runAgentTurn({ kind: "confirm", pending: proposed.pendingConfirmation!, history: [] }, gateway);
+
+    expect(mutationSpy).toHaveBeenCalledOnce();
+    expect(mutationSpy).toHaveBeenCalledWith(expect.objectContaining({
+      accountId,
+      sourceQuoteId: "a0Q000000000001AAA",
+      confirmedByUser: true,
+      idempotencyKey: expect.any(String),
+    }));
+  });
+
   it("executes a pending mutation only on confirmation with runtime-controlled authorization", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
       role: "assistant",
