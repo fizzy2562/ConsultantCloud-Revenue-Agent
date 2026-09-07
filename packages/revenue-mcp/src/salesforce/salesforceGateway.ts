@@ -28,9 +28,6 @@ import {
   RemoveBundleComponentInput, RemoveBundleComponentResult, UpdateBundleComponentInput,
 } from "@consultantcloud/shared";
 
-const STANDARD_PRICEBOOK_ID = "01sQy00000L8ec5IAB";
-const BUNDLE_RELATIONSHIP_TYPE_ID = "0yoQy000000NafVIAS";
-
 export const SALESFORCE_CAPABILITIES = {
   objects: ["Account", "Asset", "Product2", "PricebookEntry", "Opportunity", "Quote", "QuoteLineItem", "ProductRelatedComponent"],
   flowActions: [
@@ -78,7 +75,24 @@ function escapeSoqlLike(value: string): string {
 }
 
 export class SalesforceRevenueGateway implements RevenueGateway {
+  private standardPricebookId: string | null | undefined;
+  private bundleRelationshipTypeId: string | null | undefined;
+
   constructor(private readonly conn: Connection) {}
+
+  private async resolveStandardPricebookId(): Promise<string | null> {
+    if (this.standardPricebookId !== undefined) return this.standardPricebookId;
+    const result = await this.conn.query<{ Id: string }>("SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1");
+    this.standardPricebookId = result.records[0]?.Id ?? null;
+    return this.standardPricebookId;
+  }
+
+  private async resolveBundleRelationshipTypeId(): Promise<string | null> {
+    if (this.bundleRelationshipTypeId !== undefined) return this.bundleRelationshipTypeId;
+    const result = await this.conn.query<{ Id: string }>("SELECT Id FROM ProductRelationshipType WHERE Name = 'Bundle to Bundle Component Relationship' LIMIT 1");
+    this.bundleRelationshipTypeId = result.records[0]?.Id ?? null;
+    return this.bundleRelationshipTypeId;
+  }
 
   async findAccount(input: FindAccountInput): Promise<ToolResult<AccountSummary[]>> {
     try {
@@ -258,10 +272,12 @@ export class SalesforceRevenueGateway implements RevenueGateway {
 
   async setProductPrice(input: SetProductPriceInput): Promise<ToolResult<ProductPriceResult>> {
     try {
-      const records = await this.conn.query<{ Id: string }>(`SELECT Id FROM PricebookEntry WHERE Product2Id = '${escapeSoql(input.productId)}' AND Pricebook2Id = '${STANDARD_PRICEBOOK_ID}' LIMIT 1`);
+      const standardPricebookId = await this.resolveStandardPricebookId();
+      if (!standardPricebookId) return { ok: false, error: { code: "NO_STANDARD_PRICEBOOK", message: "No standard Salesforce price book was found in this org", retryable: false }, meta: meta() };
+      const records = await this.conn.query<{ Id: string }>(`SELECT Id FROM PricebookEntry WHERE Product2Id = '${escapeSoql(input.productId)}' AND Pricebook2Id = '${standardPricebookId}' LIMIT 1`);
       let pricebookEntryId = records.records[0]?.Id;
       if (pricebookEntryId) await this.conn.sobject("PricebookEntry").update({ Id: pricebookEntryId, UnitPrice: input.unitPrice, ...(input.isActive !== undefined ? { IsActive: input.isActive } : {}) });
-      else { const created = await this.conn.sobject("PricebookEntry").create({ Pricebook2Id: STANDARD_PRICEBOOK_ID, Product2Id: input.productId, UnitPrice: input.unitPrice, IsActive: input.isActive ?? true }); pricebookEntryId = created.id as string; }
+      else { const created = await this.conn.sobject("PricebookEntry").create({ Pricebook2Id: standardPricebookId, Product2Id: input.productId, UnitPrice: input.unitPrice, IsActive: input.isActive ?? true }); pricebookEntryId = created.id as string; }
       return { ok: true, data: { pricebookEntryId, productId: input.productId, unitPrice: input.unitPrice }, meta: meta() };
     } catch (err) { return { ok: false, error: { code: "SALESFORCE_ERROR", message: String(err), retryable: true }, meta: meta() }; }
   }
@@ -275,7 +291,9 @@ export class SalesforceRevenueGateway implements RevenueGateway {
 
   async addBundleComponent(input: AddBundleComponentInput): Promise<ToolResult<BundleComponentResult>> {
     try {
-      const fields: Record<string, unknown> = { ParentProductId: input.parentProductId, ChildProductId: input.childProductId, ProductRelationshipTypeId: BUNDLE_RELATIONSHIP_TYPE_ID };
+      const bundleRelationshipTypeId = await this.resolveBundleRelationshipTypeId();
+      if (!bundleRelationshipTypeId) return { ok: false, error: { code: "NO_BUNDLE_RELATIONSHIP_TYPE", message: "The Bundle to Bundle Component Relationship type was not found in this org", retryable: false }, meta: meta() };
+      const fields: Record<string, unknown> = { ParentProductId: input.parentProductId, ChildProductId: input.childProductId, ProductRelationshipTypeId: bundleRelationshipTypeId };
       const mapping = { quantity: "Quantity", minQuantity: "MinQuantity", maxQuantity: "MaxQuantity", isComponentRequired: "IsComponentRequired", isDefaultComponent: "IsDefaultComponent", sequence: "Sequence", productComponentGroupId: "ProductComponentGroupId" } as const;
       for (const [key, field] of Object.entries(mapping)) if (input[key as keyof typeof mapping] !== undefined) fields[field] = input[key as keyof typeof mapping];
       const created = await this.conn.sobject("ProductRelatedComponent").create(fields);

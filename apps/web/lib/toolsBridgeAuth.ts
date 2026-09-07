@@ -1,7 +1,10 @@
-export function authorizeToolsRequest(request: Request): Response | null {
-  const apiKey = process.env.TOOLS_API_KEY;
+export type ToolsBridgeScope = "revenue" | "catalog";
+
+export function authorizeToolsRequest(request: Request, scope: ToolsBridgeScope = "revenue"): Response | null {
+  const variableName = scope === "catalog" ? "CATALOG_TOOLS_API_KEY" : "TOOLS_API_KEY";
+  const apiKey = process.env[variableName];
   if (!apiKey) {
-    console.error("Tools API refused request: TOOLS_API_KEY is not configured");
+    console.error(`Tools API refused request: ${variableName} is not configured`);
     return Response.json(
       { error: "Tools API is not configured" },
       { status: 500 }

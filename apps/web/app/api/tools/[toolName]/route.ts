@@ -1,40 +1,16 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
-import { createServer, createRevenueGateway } from "@consultantcloud/revenue-mcp";
-import {
-  AccountIdInputSchema,
-  AddQuoteLineInputSchema,
-  ApplyDiscountInputSchema,
-  CreateInitialQuoteInputSchema,
-  CreateRenewalQuoteInputSchema,
-  CreateAmendmentQuoteInputSchema,
-  FindAccountInputSchema,
-  ProductSearchInputSchema,
-  QuoteIdInputSchema,
-  RemoveQuoteLineInputSchema,
-  UpdateQuoteLineInputSchema,
-} from "@consultantcloud/shared";
+import { catalogTools, createServer, createRevenueGateway, toolDefinitions } from "@consultantcloud/revenue-mcp";
 import { authorizeToolsRequest } from "../../../../lib/toolsBridgeAuth";
 
 export const runtime = "nodejs";
 
 const gateway = createRevenueGateway();
 
-const toolSchemas = {
-  find_account: FindAccountInputSchema,
-  get_account_revenue_context: AccountIdInputSchema,
-  search_products: ProductSearchInputSchema,
-  get_account_assets: AccountIdInputSchema,
-  get_quote_summary: QuoteIdInputSchema,
-  create_initial_quote: CreateInitialQuoteInputSchema,
-  create_renewal_quote: CreateRenewalQuoteInputSchema,
-  create_amendment_quote: CreateAmendmentQuoteInputSchema,
-  add_quote_line: AddQuoteLineInputSchema,
-  remove_quote_line: RemoveQuoteLineInputSchema,
-  update_quote_line: UpdateQuoteLineInputSchema,
-  apply_discount: ApplyDiscountInputSchema,
-};
+const toolSchemas = Object.fromEntries(
+  Object.entries(toolDefinitions).map(([name, definition]) => [name, definition.input])
+) as { [Name in keyof typeof toolDefinitions]: (typeof toolDefinitions)[Name]["input"] };
 
 type ToolName = keyof typeof toolSchemas;
 
@@ -69,13 +45,12 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ toolName: string }> }
 ) {
-  const authFailure = authorizeToolsRequest(request);
-  if (authFailure) return authFailure;
-
   const { toolName } = await context.params;
   if (!isToolName(toolName)) {
     return Response.json({ error: "Unknown tool" }, { status: 404 });
   }
+  const authFailure = authorizeToolsRequest(request, catalogTools.has(toolName) ? "catalog" : "revenue");
+  if (authFailure) return authFailure;
 
   let body: unknown;
   try {

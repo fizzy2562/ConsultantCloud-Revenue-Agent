@@ -8,7 +8,7 @@ Deploy the ConsultantCloud web app to hosting that Salesforce can reach over a p
 
 Verify the deployed URL serves the bridge at `/api/tools`. For example, a request to `/api/tools/find_account` without credentials should return HTTP 401 after the API key is configured.
 
-## 2. Configure the shared secret
+## 2. Configure the scoped shared secrets
 
 Generate a high-entropy secret with a password manager or a platform secret generator. For example, on a machine with OpenSSL:
 
@@ -17,6 +17,8 @@ openssl rand -base64 48
 ```
 
 Set the generated value as the deployed app's `TOOLS_API_KEY` environment variable and restart or redeploy the app. Store it only in the hosting platform's secret manager and Salesforce; do not commit it. If this variable is absent or empty, the bridge deliberately refuses every request with HTTP 500.
+
+`TOOLS_API_KEY` continues to authorize the twelve revenue lookup and quote-management actions documented here. If a separate Agentforce integration needs catalog and bundle-management actions, generate a different secret and configure it as `CATALOG_TOOLS_API_KEY`. Catalog endpoints fail closed when that variable is unset, and neither key authorizes the other scope. Use a separate External/Named Credential carrying `Bearer <CATALOG_TOOLS_API_KEY>` for those actions.
 
 ## 3. Create the Salesforce Named Credential
 

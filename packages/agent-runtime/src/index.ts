@@ -29,6 +29,8 @@ export type PendingConfirmation = {
   toolName: string;
   args: Record<string, unknown>;
   summary: { title: string; lines: string[]; confirmLabel: string; cancelLabel: string; requiresApproverName?: boolean };
+  /** IDs established by successful tool results before this proposal was created. */
+  provenanceIds?: string[];
 };
 
 export type AgentTurnResult = {
@@ -200,9 +202,10 @@ function looksLikeSalesforceId(value: string): boolean {
   return /^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/.test(value);
 }
 
-async function resolveQuoteId(client: Client, candidate: string): Promise<string> {
+async function resolveQuoteId(client: Client, candidate: string, remember?: (result: ToolEnvelope) => void): Promise<string> {
   if (looksLikeSalesforceId(candidate)) return candidate;
   const { result } = await callRevenueTool(client, "get_quote_summary", { quoteNumber: candidate });
+  remember?.(result);
   if (result.ok && typeof (result.data as { quoteId?: unknown })?.quoteId === "string") {
     return (result.data as { quoteId: string }).quoteId;
   }
@@ -230,16 +233,57 @@ export async function runAgentTurn(
   const accountNames = new Map<string, string>();
   const quoteNumbers = new Map<string, string>();
   const productNames = new Map<string, string>();
+  const seenIds = new Set<string>();
   let latestText = "";
   let confirmedMessage = "";
 
   const rememberResult = (result: ToolEnvelope) => {
-    if (!result.ok || Array.isArray(result.data) || !result.data || typeof result.data !== "object") return;
+    if (!result.ok) return;
+    const visit = (value: unknown) => {
+      if (typeof value === "string" && looksLikeSalesforceId(value)) seenIds.add(value);
+      else if (Array.isArray(value)) value.forEach(visit);
+      else if (value && typeof value === "object") Object.values(value as Record<string, unknown>).forEach(visit);
+    };
+    visit(result.data);
+    if (Array.isArray(result.data) || !result.data || typeof result.data !== "object") return;
     const data = result.data as Record<string, unknown>;
     if (typeof data.quoteId === "string" && typeof data.quoteNumber === "string") {
       quoteNumbers.set(data.quoteId, data.quoteNumber);
     }
   };
+
+  for (const id of input.kind === "confirm" ? input.pending.provenanceIds ?? [] : []) {
+    if (looksLikeSalesforceId(id)) seenIds.add(id);
+  }
+  const userMessages = [
+    ...input.history.filter((message) => message.role === "user").map((message) => message.content),
+    ...(input.kind === "message" ? [input.text] : []),
+  ];
+  const unprovenId = (args: Record<string, unknown>): { field: string; id: string } | null => {
+    const visit = (value: unknown, path: string): { field: string; id: string } | null => {
+      if (typeof value === "string" && looksLikeSalesforceId(value)) {
+        return seenIds.has(value) || userMessages.some((message) => message.includes(value)) ? null : { field: path, id: value };
+      }
+      if (Array.isArray(value)) {
+        for (let index = 0; index < value.length; index += 1) {
+          const invalid = visit(value[index], `${path}[${index}]`);
+          if (invalid) return invalid;
+        }
+      } else if (value && typeof value === "object") {
+        for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+          const invalid = visit(child, path ? `${path}.${key}` : key);
+          if (invalid) return invalid;
+        }
+      }
+      return null;
+    };
+    return visit(args, "");
+  };
+  const provenanceFailure = (invalid: { field: string; id: string }): AgentTurnResult => ({
+    message: `I can't proceed because ${invalid.field} references Salesforce ID ${invalid.id}, which hasn't been looked up in this conversation or supplied by you. Please ask me to look it up first. If you supply the ID yourself, Salesforce will validate it directly.`,
+    trace,
+    pendingConfirmation: null,
+  });
 
   if (input.kind === "message") {
     messages.push({ role: "user", content: input.text });
@@ -248,8 +292,10 @@ export async function runAgentTurn(
       throw new Error(`Cannot confirm non-mutation tool: ${input.pending.toolName}`);
     }
     const pendingArgs = { ...input.pending.args };
-    if (typeof pendingArgs.quoteId === "string") pendingArgs.quoteId = await resolveQuoteId(client, pendingArgs.quoteId);
-    if (typeof pendingArgs.sourceQuoteId === "string") pendingArgs.sourceQuoteId = await resolveQuoteId(client, pendingArgs.sourceQuoteId);
+    if (typeof pendingArgs.quoteId === "string") pendingArgs.quoteId = await resolveQuoteId(client, pendingArgs.quoteId, rememberResult);
+    if (typeof pendingArgs.sourceQuoteId === "string") pendingArgs.sourceQuoteId = await resolveQuoteId(client, pendingArgs.sourceQuoteId, rememberResult);
+    const invalid = unprovenId(pendingArgs);
+    if (invalid) return provenanceFailure(invalid);
     const args = { ...pendingArgs, confirmedByUser: true, idempotencyKey: crypto.randomUUID(), ...(input.approverName ? { approvedBy: input.approverName } : {}) };
     const { result, durationMs } = await callRevenueTool(client, input.pending.toolName, args);
     const blocked = !result.ok && (result.error?.code === "DISCOUNT_REJECTED" || result.error?.code === "CONFIRMATION_REQUIRED");
@@ -289,13 +335,26 @@ export async function runAgentTurn(
 
     const mutation = calls.find((call) => modeMutations.has(call.function.name));
     if (mutation) {
-      const pending = await confirmationFor(client, mutation.function.name, mutation.function.arguments ?? {}, accountNames, quoteNumbers, productNames);
+      const mutationArgs = { ...(mutation.function.arguments ?? {}) };
+      if (typeof mutationArgs.quoteId === "string") mutationArgs.quoteId = await resolveQuoteId(client, mutationArgs.quoteId, rememberResult);
+      if (typeof mutationArgs.sourceQuoteId === "string") mutationArgs.sourceQuoteId = await resolveQuoteId(client, mutationArgs.sourceQuoteId, rememberResult);
+      const invalid = unprovenId(mutationArgs);
+      if (invalid) return provenanceFailure(invalid);
+      const pending = await confirmationFor(client, mutation.function.name, mutationArgs, accountNames, quoteNumbers, productNames);
+      const authorizedIds = new Set(seenIds);
+      const rememberAuthorizedArgument = (value: unknown) => {
+        if (typeof value === "string" && looksLikeSalesforceId(value)) authorizedIds.add(value);
+        else if (Array.isArray(value)) value.forEach(rememberAuthorizedArgument);
+        else if (value && typeof value === "object") Object.values(value as Record<string, unknown>).forEach(rememberAuthorizedArgument);
+      };
+      rememberAuthorizedArgument(mutationArgs);
+      pending.provenanceIds = [...authorizedIds];
       return { message: combinedMessage(proposedMessage(pending)), trace, pendingConfirmation: pending };
     }
 
     for (const call of calls) {
       const args = { ...(call.function.arguments ?? {}) };
-      if (typeof args.quoteId === "string") args.quoteId = await resolveQuoteId(client, args.quoteId);
+      if (typeof args.quoteId === "string") args.quoteId = await resolveQuoteId(client, args.quoteId, rememberResult);
       const { result, durationMs } = await callRevenueTool(client, call.function.name, args);
       trace.push({ tool: call.function.name, badge: "READ", durationMs, blocked: false, summary: resultSummary(call.function.name, result) });
       if (call.function.name === "find_account" && result.ok && Array.isArray(result.data)) {

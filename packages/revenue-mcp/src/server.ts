@@ -8,7 +8,7 @@ import { EventLogger, FileEventSink } from "@consultantcloud/telemetry";
 import { createSalesforceConnection } from "./salesforce/auth";
 import { SalesforceRevenueGateway } from "./salesforce/salesforceGateway";
 
-export { toolCatalog, toolDefinitions } from "./toolCatalog";
+export { catalogToolNames, catalogTools, toolCatalog, toolDefinitions } from "./toolCatalog";
 export type { ToolName } from "./toolCatalog";
 export { SALESFORCE_CAPABILITIES } from "./salesforce/salesforceGateway";
 

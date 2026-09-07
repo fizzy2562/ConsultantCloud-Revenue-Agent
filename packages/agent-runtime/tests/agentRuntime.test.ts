@@ -123,7 +123,7 @@ describe("agent runtime", () => {
     const addLineSpy = vi.spyOn(gateway, "addQuoteLine");
 
     const proposed = await runAgentTurn(
-      { kind: "message", text: "Add two Cloud Pro licenses to Q-10000", history: [] },
+      { kind: "message", text: "Add two Cloud Pro licenses (01t000000000002AAA) to Q-10000", history: [] },
       gateway
     );
 
@@ -176,7 +176,7 @@ describe("agent runtime", () => {
     const mutationSpy = vi.spyOn(gateway, "createRenewalQuote");
 
     const result = await runAgentTurn(
-      { kind: "message", text: "Renew Acme for three years", history: [] },
+      { kind: "message", text: `Renew account ${accountId} for three years`, history: [] },
       gateway
     );
 
@@ -186,6 +186,61 @@ describe("agent runtime", () => {
       args: { accountId, termMonths: 36, effectiveDate: "2026-10-01" },
       summary: { title: "Ready to create renewal quote", confirmLabel: "Create renewal", cancelLabel: "Cancel" },
     });
+  });
+
+  it("rejects a fabricated mutation ID before it reaches the gateway", async () => {
+    const fabricatedId = "001999999999999AAA";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
+      role: "assistant", content: "", tool_calls: [{ function: { name: "create_initial_quote", arguments: { accountId: fabricatedId, termMonths: 12 } } }],
+    })));
+    const gateway = new MockRevenueGateway();
+    const mutationSpy = vi.spyOn(gateway, "createInitialQuote");
+
+    const result = await runAgentTurn({ kind: "message", text: "Create a quote for that account", history: [] }, gateway);
+
+    expect(mutationSpy).not.toHaveBeenCalled();
+    expect(result.pendingConfirmation).toBeNull();
+    expect(result.message).toContain("accountId");
+    expect(result.message).toContain(fabricatedId);
+  });
+
+  it("re-checks ID provenance before executing a submitted confirmation", async () => {
+    const fabricatedId = "001999999999999AAA";
+    const pending: PendingConfirmation = {
+      toolName: "create_initial_quote",
+      args: { accountId: fabricatedId, termMonths: 12 },
+      summary: { title: "Ready", lines: [], confirmLabel: "Confirm", cancelLabel: "Cancel" },
+    };
+    const gateway = new MockRevenueGateway();
+    const mutationSpy = vi.spyOn(gateway, "createInitialQuote");
+
+    const result = await runAgentTurn({ kind: "confirm", pending, history: [] }, gateway);
+
+    expect(mutationSpy).not.toHaveBeenCalled();
+    expect(result.message).toContain(fabricatedId);
+  });
+
+  it("accepts an ID returned by an earlier successful tool call and retains its provenance through confirmation", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(ollamaResponse({ role: "assistant", content: "", tool_calls: [{ function: { name: "find_account", arguments: { name: "Acme" } } }] }))
+      .mockResolvedValueOnce(ollamaResponse({ role: "assistant", content: "", tool_calls: [{ function: { name: "create_initial_quote", arguments: { accountId, termMonths: 12 } } }] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new MockRevenueGateway();
+    const mutationSpy = vi.spyOn(gateway, "createInitialQuote");
+    const proposed = await runAgentTurn({ kind: "message", text: "Find Acme and create a quote", history: [] }, gateway);
+    expect(proposed.pendingConfirmation?.provenanceIds).toContain(accountId);
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "Done." })));
+    await runAgentTurn({ kind: "confirm", pending: proposed.pendingConfirmation!, history: [] }, gateway);
+    expect(mutationSpy).toHaveBeenCalledOnce();
+  });
+
+  it("accepts a Salesforce ID typed verbatim by the user", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
+      role: "assistant", content: "", tool_calls: [{ function: { name: "create_initial_quote", arguments: { accountId, termMonths: 12 } } }],
+    })));
+    const result = await runAgentTurn({ kind: "message", text: `Create a quote for ${accountId}`, history: [] }, new MockRevenueGateway());
+    expect(result.pendingConfirmation).toMatchObject({ toolName: "create_initial_quote", args: { accountId } });
   });
 
   it("gates create_amendment_quote and calls the gateway only after confirmation", async () => {
@@ -203,7 +258,7 @@ describe("agent runtime", () => {
     const mutationSpy = vi.spyOn(gateway, "createAmendmentQuote");
 
     const proposed = await runAgentTurn(
-      { kind: "message", text: "Create an amendment for Q-10000", history: [] },
+      { kind: "message", text: `Create an amendment for account ${accountId} using Q-10000`, history: [] },
       gateway
     );
 
@@ -213,7 +268,7 @@ describe("agent runtime", () => {
       args: { accountId, sourceQuoteId: "a0Q000000000001AAA" },
       summary: {
         title: "Ready to create amendment quote",
-        lines: [`Account: ${accountId}`, "Source quote: a0Q000000000001AAA"],
+        lines: [`Account: ${accountId}`, "Source quote: Q-10000"],
         confirmLabel: "Create amendment",
         cancelLabel: "Cancel",
       },
@@ -250,7 +305,7 @@ describe("agent runtime", () => {
       summary: { title: "Ready to create renewal quote", lines: [], confirmLabel: "Create renewal", cancelLabel: "Cancel" },
     };
 
-    const result = await runAgentTurn({ kind: "confirm", pending, history: [] }, gateway);
+    const result = await runAgentTurn({ kind: "confirm", pending, history: [{ role: "user", content: `Use account ${accountId}` }] }, gateway);
 
     expect(mutationSpy).toHaveBeenCalledOnce();
     expect(mutationSpy).toHaveBeenCalledWith(expect.objectContaining({
@@ -275,7 +330,7 @@ describe("agent runtime", () => {
     const gateway = new MockRevenueGateway();
     const mutationSpy = vi.spyOn(gateway, gatewayMethod);
 
-    const proposed = await runAgentTurn({ kind: "message", text: "Change the quote line", history: [] }, gateway);
+    const proposed = await runAgentTurn({ kind: "message", text: `Change quote line ${args.quoteLineId}`, history: [] }, gateway);
 
     expect(mutationSpy).not.toHaveBeenCalled();
     expect(proposed.pendingConfirmation).toMatchObject({ toolName, args, summary: { title, cancelLabel: "Cancel" } });
@@ -308,7 +363,7 @@ describe("agent runtime", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await runAgentTurn(
-      { kind: "message", text: "Apply a discount to quote Q-10000", history: [] },
+      { kind: "message", text: "Apply a discount to quote Q-10000 line a1Q000000000001AAA", history: [] },
       new MockRevenueGateway()
     );
 
@@ -337,7 +392,7 @@ describe("agent runtime", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await runAgentTurn(
-      { kind: "message", text: "Add ten Cloud Pro licenses", history: [] },
+      { kind: "message", text: "Add ten Cloud Pro licenses to quote a0Q000000000001AAA", history: [] },
       new MockRevenueGateway()
     );
 
@@ -370,14 +425,15 @@ describe("agent runtime", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "Done." })));
     const blockedGateway = new MockRevenueGateway();
     const blockedSpy = vi.spyOn(blockedGateway, "applyDiscount");
-    const blocked = await runAgentTurn({ kind: "confirm", pending, history: [] }, blockedGateway);
+    const idHistory = [{ role: "user" as const, content: "Use quote a0Q000000000001AAA and line a0L000000000001AAA" }];
+    const blocked = await runAgentTurn({ kind: "confirm", pending, history: idHistory }, blockedGateway);
     expect(blockedSpy).not.toHaveBeenCalled();
     expect(blocked.message).toContain("manager's name is required");
 
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "Done." })));
     const approvedGateway = new MockRevenueGateway();
     const approvedSpy = vi.spyOn(approvedGateway, "applyDiscount");
-    const approved = await runAgentTurn({ kind: "confirm", pending, history: [], approverName: "Morgan Lee" }, approvedGateway);
+    const approved = await runAgentTurn({ kind: "confirm", pending, history: idHistory, approverName: "Morgan Lee" }, approvedGateway);
     expect(approvedSpy).toHaveBeenCalledWith(expect.objectContaining({ approvedBy: "Morgan Lee", confirmedByUser: true }));
     expect(approved.message).toContain("20% discount applied");
   });
@@ -403,7 +459,7 @@ describe("agent runtime", () => {
       summary: { title: "Ready", lines: [], confirmLabel: "Confirm", cancelLabel: "Cancel" },
     };
 
-    const result = await runAgentTurn({ kind: "confirm", pending, history: [] }, gateway);
+    const result = await runAgentTurn({ kind: "confirm", pending, history: [{ role: "user", content: `Renew ${accountId}` }] }, gateway);
 
     expect(renewalSpy).toHaveBeenCalledOnce();
     expect(addLineSpy).not.toHaveBeenCalled();
@@ -425,7 +481,7 @@ describe("agent runtime", () => {
       summary: { title: "Ready", lines: [], confirmLabel: "Confirm", cancelLabel: "Cancel" },
     };
 
-    const result = await runAgentTurn({ kind: "confirm", pending, history: [] }, new MockRevenueGateway());
+    const result = await runAgentTurn({ kind: "confirm", pending, history: [{ role: "user", content: `Renew ${accountId}` }] }, new MockRevenueGateway());
 
     expect(result.pendingConfirmation).toBeNull();
     expect(result.message).toContain("created");

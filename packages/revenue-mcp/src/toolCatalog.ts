@@ -56,6 +56,18 @@ export const toolDefinitions = {
 
 export type ToolName = keyof typeof toolDefinitions;
 
+export const catalogToolNames = [
+  "create_product",
+  "update_product",
+  "set_product_price",
+  "get_bundle_structure",
+  "add_bundle_component",
+  "remove_bundle_component",
+  "update_bundle_component",
+] as const satisfies readonly ToolName[];
+
+export const catalogTools = new Set<ToolName>(catalogToolNames);
+
 export function toolRegistration<N extends ToolName>(name: N): {
   title: string;
   description: string;

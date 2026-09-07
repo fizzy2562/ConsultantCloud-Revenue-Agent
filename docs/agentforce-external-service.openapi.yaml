@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: ConsultantCloud Revenue Tools
   version: 0.1.0
-  description: Stateless revenue lookup and quote-management actions for Salesforce Agentforce.
+  description: Stateless revenue lookup and quote-management actions for Salesforce Agentforce. These twelve operations use TOOLS_API_KEY; catalog and bundle endpoints exposed by the app require the separate CATALOG_TOOLS_API_KEY and are intentionally not part of this External Service definition.
 servers:
   - url: https://web-topaz-six-39.vercel.app
     description: Live Vercel deployment of the ConsultantCloud web app.
@@ -211,7 +211,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: API key
-      description: Shared secret from the app's TOOLS_API_KEY environment variable.
+      description: Shared secret from the app's TOOLS_API_KEY environment variable. It authorizes only the revenue lookup and quote-management operations in this document; catalog endpoints require CATALOG_TOOLS_API_KEY.
   responses:
     ToolResult:
       description: The tool ran. Inspect ok to determine whether the business operation succeeded.
