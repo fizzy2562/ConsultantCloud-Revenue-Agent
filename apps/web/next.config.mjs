@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: "standalone",
+  // "standalone" output is for the Docker image (see ../../Dockerfile) and is
+  // incompatible with Vercel's own build/trace pipeline, so skip it there.
+  output: process.env.VERCEL ? undefined : "standalone",
   transpilePackages: [
     "@consultantcloud/agent-runtime",
     "@consultantcloud/revenue-mcp",

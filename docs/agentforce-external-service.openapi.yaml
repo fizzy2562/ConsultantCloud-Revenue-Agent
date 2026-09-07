@@ -4,8 +4,8 @@ info:
   version: 0.1.0
   description: Stateless revenue lookup and quote-management actions for Salesforce Agentforce.
 servers:
-  - url: https://your-consultantcloud-host.example
-    description: Replace with the public HTTPS URL of the deployed web application.
+  - url: https://web-topaz-six-39.vercel.app
+    description: Live Vercel deployment of the ConsultantCloud web app.
 security:
   - bearerAuth: []
 paths:

@@ -24,7 +24,13 @@ export function ToolTracePanel({
       className={`cc-trace-panel ${expanded ? "cc-trace-panel--expanded" : "cc-trace-panel--collapsed"}`}
     >
       <div className="cc-trace-controls">
-        <button type="button" className="cc-trace-toggle" onClick={onToggle}>
+        <button
+          type="button"
+          className="cc-trace-toggle"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          aria-controls="cc-trace-entries-region"
+        >
           {expanded ? "Hide trace" : "Show trace"}
         </button>
         <a
@@ -35,7 +41,10 @@ export function ToolTracePanel({
           Download trace
         </a>
       </div>
-      <div className="cc-trace-entries">
+      <div className="cc-trace-entries" id="cc-trace-entries-region">
+        {entries.length === 0 && (
+          <p className="cc-trace-empty">Tool calls will appear here after the agent responds.</p>
+        )}
         {entries.map((entry, index) => (
           <div className="cc-trace-entry" key={index}>
             <span className={`cc-badge-${entry.badge.toLowerCase()}`}>
