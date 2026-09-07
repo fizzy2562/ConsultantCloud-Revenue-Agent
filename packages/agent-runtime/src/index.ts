@@ -1,9 +1,19 @@
+import { setDefaultResultOrder } from "node:dns";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createServer } from "@consultantcloud/revenue-mcp";
 import type { RevenueGateway } from "@consultantcloud/shared";
 import { evaluateDiscount } from "@consultantcloud/policy";
+
+// Some serverless runtimes resolve dual-stack hostnames to an IPv6 address
+// they cannot actually route to, surfacing as a plain DNS ENOTFOUND rather
+// than a connection error. Prefer IPv4 to avoid that class of failure.
+try {
+  setDefaultResultOrder("ipv4first");
+} catch {
+  // Not available in this runtime; fall back to platform default.
+}
 
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 
@@ -27,10 +37,11 @@ export type AgentTurnResult = {
   pendingConfirmation: PendingConfirmation | null;
 };
 
-export type RunAgentTurnInput =
+export type AgentMode = "user" | "architect";
+export type RunAgentTurnInput = (
   | { kind: "message"; text: string; history: ChatTurn[] }
   | { kind: "confirm"; pending: PendingConfirmation; history: ChatTurn[]; approverName?: string }
-  | { kind: "cancel"; pending: PendingConfirmation; history: ChatTurn[] };
+  | { kind: "cancel"; pending: PendingConfirmation; history: ChatTurn[] }) & { mode?: AgentMode };
 
 export interface AgentRuntimeOptions {
   ollamaUrl?: string;
@@ -53,6 +64,13 @@ type OllamaMessage = {
   tool_calls?: OllamaToolCall[];
 };
 
+export const AGENT_RUNTIME_DEFAULTS = {
+  ollamaUrl: "http://127.0.0.1:11434",
+  model: "qwen3.8:27b",
+  toolLoopLimit: 4,
+  confirmationRequired: true,
+} as const;
+
 const MUTATION_TOOLS = new Set([
   "create_initial_quote",
   "create_renewal_quote",
@@ -62,10 +80,15 @@ const MUTATION_TOOLS = new Set([
   "update_quote_line",
   "apply_discount",
 ]);
+const CATALOG_MUTATION_TOOLS = new Set(["create_product", "update_product", "set_product_price", "add_bundle_component", "remove_bundle_component", "update_bundle_component"]);
+const USER_TOOLS = new Set(["find_account", "get_account_revenue_context", "search_products", "get_account_assets", "get_quote_summary", ...MUTATION_TOOLS]);
+const ARCHITECT_TOOLS = new Set(["find_account", "get_account_revenue_context", "search_products", "get_account_assets", "get_quote_summary", "get_bundle_structure", ...CATALOG_MUTATION_TOOLS]);
 
 const SYSTEM_PROMPT = `You are a commercial assistant for Salesforce Revenue Management requests involving quotes, renewals, amendments, quote line items, and discounts.
 Use the available tools to retrieve facts and perform requested work. Always resolve an account by name with find_account before calling any tool that needs an accountId. Use get_account_revenue_context and get_account_assets for account context, search_products to resolve products, and get_quote_summary to inspect a quote.
 When the user's request requires creating a quote, adding or removing a line item, updating a line item's quantity, or applying a discount, call that tool directly with the real arguments you intend — you do not need to ask the user for permission yourself; a separate confirmation step outside your control handles that. Never invent an account ID, product ID, quote ID, quote line ID, or price — only use values you got from a tool result.`;
+
+const ARCHITECT_SYSTEM_PROMPT = `You are a Salesforce Revenue Cloud consultant and solution architect assistant. Manage Product2 records, Standard Price Book prices, and bundle component structures with the available tools. Inspect existing records before changing them. For every write, call the intended tool with real fields; a separate confirmation gate requires explicit user confirmation before execution. Never fabricate a product, pricebook entry, bundle component, component group, or relationship ID. Only use IDs returned by tools or explicitly supplied by the user.`;
 
 async function connectedClient(gateway: RevenueGateway, options: AgentRuntimeOptions) {
   const server = createServer(gateway, { runId: options.runId });
@@ -97,6 +120,8 @@ async function confirmationFor(
   productNames: Map<string, string>
 ): Promise<PendingConfirmation> {
   const pendingArgs = { ...args };
+  delete pendingArgs.confirmedByUser;
+  delete pendingArgs.idempotencyKey;
   if ((toolName === "add_quote_line" || toolName === "apply_discount") && typeof pendingArgs.quoteId === "string") {
     pendingArgs.quoteId = await resolveQuoteId(client, pendingArgs.quoteId);
   }
@@ -122,6 +147,12 @@ async function confirmationFor(
       return { toolName, args, summary: { title: "Ready to update quote line quantity", lines: [`Quote line: ${display(args.quoteLineId)}`, `New quantity: ${display(args.quantity)}`], confirmLabel: "Update quantity", cancelLabel: "Cancel" } };
     case "apply_discount":
       return { toolName, args, summary: { title: "Ready to apply discount", lines: [`Quote: ${quote()}`, `Quote line: ${display(args.quoteLineId)}`, `Discount: ${display(args.discountPercent)}%`], confirmLabel: "Apply discount", cancelLabel: "Cancel", ...(evaluateDiscount(args.discountPercent as number).decision === "approval_required" ? { requiresApproverName: true } : {}) } };
+    case "create_product": return { toolName, args, summary: { title: "Ready to create product", lines: [`Name: ${display(args.name)}`, `Family: ${display(args.family)}`, `Type: ${display(args.type)}`], confirmLabel: "Create product", cancelLabel: "Cancel" } };
+    case "update_product": return { toolName, args, summary: { title: "Ready to update product", lines: [`Product: ${display(args.productId)}`, `Name: ${display(args.name)}`], confirmLabel: "Update product", cancelLabel: "Cancel" } };
+    case "set_product_price": return { toolName, args, summary: { title: "Ready to set product price", lines: [`Product: ${product()}`, `Unit price: ${display(args.unitPrice)}`], confirmLabel: "Set price", cancelLabel: "Cancel" } };
+    case "add_bundle_component": return { toolName, args, summary: { title: "Ready to add bundle component", lines: [`Bundle: ${display(args.parentProductId)}`, `Component: ${display(args.childProductId)}`, `Quantity: ${display(args.quantity)}`], confirmLabel: "Add component", cancelLabel: "Cancel" } };
+    case "remove_bundle_component": return { toolName, args, summary: { title: "Ready to remove bundle component", lines: [`Component record: ${display(args.componentId)}`], confirmLabel: "Remove component", cancelLabel: "Cancel" } };
+    case "update_bundle_component": return { toolName, args, summary: { title: "Ready to update bundle component", lines: [`Component record: ${display(args.componentId)}`], confirmLabel: "Update component", cancelLabel: "Cancel" } };
     default:
       throw new Error(`Unsupported mutation tool: ${toolName}`);
   }
@@ -187,11 +218,14 @@ export async function runAgentTurn(
 
   const client = await connectedClient(gateway, options);
   const { tools } = await client.listTools();
-  const ollamaTools = tools.map((tool) => ({
+  const mode = input.mode ?? "user";
+  const allowedTools = mode === "architect" ? ARCHITECT_TOOLS : USER_TOOLS;
+  const modeMutations = mode === "architect" ? CATALOG_MUTATION_TOOLS : MUTATION_TOOLS;
+  const ollamaTools = tools.filter((tool) => allowedTools.has(tool.name)).map((tool) => ({
     type: "function",
     function: { name: tool.name, description: tool.description, parameters: tool.inputSchema },
   }));
-  const messages: OllamaMessage[] = [{ role: "system", content: SYSTEM_PROMPT }, ...input.history];
+  const messages: OllamaMessage[] = [{ role: "system", content: mode === "architect" ? ARCHITECT_SYSTEM_PROMPT : SYSTEM_PROMPT }, ...input.history];
   const trace: AgentTraceEntry[] = [];
   const accountNames = new Map<string, string>();
   const quoteNumbers = new Map<string, string>();
@@ -210,7 +244,7 @@ export async function runAgentTurn(
   if (input.kind === "message") {
     messages.push({ role: "user", content: input.text });
   } else {
-    if (!MUTATION_TOOLS.has(input.pending.toolName)) {
+    if (!modeMutations.has(input.pending.toolName)) {
       throw new Error(`Cannot confirm non-mutation tool: ${input.pending.toolName}`);
     }
     const pendingArgs = { ...input.pending.args };
@@ -235,12 +269,12 @@ export async function runAgentTurn(
     return continuation ? `${confirmedMessage} ${continuation}` : confirmedMessage;
   };
 
-  for (let iteration = 0; iteration < 4; iteration += 1) {
-    const baseUrl = (options.ollamaUrl ?? "http://127.0.0.1:11434").replace(/\/+$/, "");
+  for (let iteration = 0; iteration < AGENT_RUNTIME_DEFAULTS.toolLoopLimit; iteration += 1) {
+    const baseUrl = (options.ollamaUrl ?? AGENT_RUNTIME_DEFAULTS.ollamaUrl).replace(/\/+$/, "");
     const response = await fetch(`${baseUrl}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: options.model ?? "qwen3.8:27b", stream: false, think: false, messages, tools: ollamaTools }),
+      body: JSON.stringify({ model: options.model ?? AGENT_RUNTIME_DEFAULTS.model, stream: false, think: false, messages, tools: ollamaTools }),
     });
     if (!response.ok) throw new Error(`Ollama ${response.status}: ${(await response.text()).slice(0, 300)}`);
     const body = await response.json() as { message?: OllamaMessage };
@@ -250,8 +284,10 @@ export async function runAgentTurn(
     messages.push(assistant);
     const calls = assistant.tool_calls ?? [];
     if (calls.length === 0) return { message: combinedMessage(assistant.content), trace, pendingConfirmation: null };
+    const unavailable = calls.find((call) => !allowedTools.has(call.function.name));
+    if (unavailable) throw new Error(`Tool ${unavailable.function.name} is not available in ${mode} mode`);
 
-    const mutation = calls.find((call) => MUTATION_TOOLS.has(call.function.name));
+    const mutation = calls.find((call) => modeMutations.has(call.function.name));
     if (mutation) {
       const pending = await confirmationFor(client, mutation.function.name, mutation.function.arguments ?? {}, accountNames, quoteNumbers, productNames);
       return { message: combinedMessage(proposedMessage(pending)), trace, pendingConfirmation: pending };

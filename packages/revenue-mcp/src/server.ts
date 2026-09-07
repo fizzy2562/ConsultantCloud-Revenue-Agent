@@ -2,10 +2,15 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { registerReadTools } from "./tools/index";
 import { registerMutationTools } from "./tools/mutations";
+import { registerCatalogTools } from "./tools/catalog";
 import { RevenueGateway, MockRevenueGateway } from "@consultantcloud/shared";
 import { EventLogger, FileEventSink } from "@consultantcloud/telemetry";
 import { createSalesforceConnection } from "./salesforce/auth";
 import { SalesforceRevenueGateway } from "./salesforce/salesforceGateway";
+
+export { toolCatalog, toolDefinitions } from "./toolCatalog";
+export type { ToolName } from "./toolCatalog";
+export { SALESFORCE_CAPABILITIES } from "./salesforce/salesforceGateway";
 
 export function createRevenueGateway(): RevenueGateway {
   if (process.env.SF_INSTANCE_URL && process.env.SF_ACCESS_TOKEN) {
@@ -19,6 +24,7 @@ export function createServer(gateway: RevenueGateway, options?: { runId?: string
   const logger = new EventLogger(new FileEventSink("./revenue-mcp-events.jsonl"));
   registerReadTools(server, gateway, logger, options?.runId);
   registerMutationTools(server, gateway, logger, options?.runId);
+  registerCatalogTools(server, gateway, logger, options?.runId);
   return server;
 }
 

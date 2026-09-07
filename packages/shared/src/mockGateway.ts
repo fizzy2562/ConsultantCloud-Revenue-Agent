@@ -21,6 +21,9 @@ import {
   QuoteIdInput,
   QuoteSummary,
   ToolResult,
+  CreateProductInput, UpdateProductInput, ProductResult, SetProductPriceInput, ProductPriceResult,
+  BundleIdInput, BundleStructure, AddBundleComponentInput, BundleComponentResult,
+  RemoveBundleComponentInput, RemoveBundleComponentResult, UpdateBundleComponentInput,
 } from "../types/index";
 import { accounts, products, accountAssets, ACME_UNIVERSITY_ID } from "./mockData";
 
@@ -47,6 +50,8 @@ export class MockRevenueGateway implements RevenueGateway {
   private idempotencyResults = new Map<string, ToolResult<QuoteResult>>();
   private quoteCounter = 1;
   private lineCounter = 1;
+  private catalog = new Map(products.map((p) => [p.id, { ...p, productCode: null as string | null, family: null as string | null, type: null as string | null, isActive: true, description: "" }]));
+  private bundleComponents = new Map<string, BundleStructure["components"][number]>();
 
   constructor() {
     // Acme University is fixture data for an existing customer (see existingDiscountPercent
@@ -112,12 +117,57 @@ export class MockRevenueGateway implements RevenueGateway {
   }
 
   async searchProducts(input: ProductSearchInput): Promise<ToolResult<ProductSummary[]>> {
+    const catalog = Array.from(this.catalog.values());
     if (input.query === "") {
-      return { ok: true, data: products, meta: this.meta() };
+      return { ok: true, data: catalog, meta: this.meta() };
     }
     const needle = input.query.toLowerCase();
-    const matches = products.filter((p) => p.name.toLowerCase().includes(needle));
+    const matches = catalog.filter((p) => p.name.toLowerCase().includes(needle));
     return { ok: true, data: matches, meta: this.meta() };
+  }
+
+  async createProduct(input: CreateProductInput): Promise<ToolResult<ProductResult>> {
+    const productId = `01t${crypto.randomUUID().replace(/-/g, "").slice(0, 15)}`;
+    this.catalog.set(productId, { id: productId, name: input.name, listPrice: null, productCode: input.productCode ?? null, family: input.family ?? null, type: input.type ?? null, isActive: input.isActive ?? true, description: input.description ?? "" });
+    return { ok: true, data: { productId, name: input.name }, meta: this.meta() };
+  }
+
+  async updateProduct(input: UpdateProductInput): Promise<ToolResult<ProductResult>> {
+    const product = this.catalog.get(input.productId);
+    if (!product) return { ok: false, error: { code: "NOT_FOUND", message: "Product not found", retryable: false }, meta: this.meta() };
+    Object.assign(product, { ...(input.name !== undefined ? { name: input.name } : {}), ...(input.productCode !== undefined ? { productCode: input.productCode } : {}), ...(input.family !== undefined ? { family: input.family } : {}), ...(input.type !== undefined ? { type: input.type } : {}), ...(input.isActive !== undefined ? { isActive: input.isActive } : {}), ...(input.description !== undefined ? { description: input.description } : {}) });
+    return { ok: true, data: { productId: input.productId, name: product.name }, meta: this.meta() };
+  }
+
+  async setProductPrice(input: SetProductPriceInput): Promise<ToolResult<ProductPriceResult>> {
+    const product = this.catalog.get(input.productId);
+    if (!product) return { ok: false, error: { code: "NOT_FOUND", message: "Product not found", retryable: false }, meta: this.meta() };
+    product.listPrice = input.unitPrice;
+    return { ok: true, data: { pricebookEntryId: `01u${input.productId.slice(3)}`, productId: input.productId, unitPrice: input.unitPrice }, meta: this.meta() };
+  }
+
+  async getBundleStructure(input: BundleIdInput): Promise<ToolResult<BundleStructure>> {
+    return { ok: true, data: { productId: input.productId, components: Array.from(this.bundleComponents.values()).filter((c) => c.parentProductId === input.productId) }, meta: this.meta() };
+  }
+
+  async addBundleComponent(input: AddBundleComponentInput): Promise<ToolResult<BundleComponentResult>> {
+    const child = this.catalog.get(input.childProductId);
+    if (!this.catalog.has(input.parentProductId) || !child) return { ok: false, error: { code: "NOT_FOUND", message: "Parent or child product not found", retryable: false }, meta: this.meta() };
+    const componentId = `0dS${crypto.randomUUID().replace(/-/g, "").slice(0, 15)}`;
+    this.bundleComponents.set(componentId, { componentId, parentProductId: input.parentProductId, childProductId: input.childProductId, childName: child.name, childProductCode: child.productCode, quantity: input.quantity ?? null, minQuantity: input.minQuantity ?? null, maxQuantity: input.maxQuantity ?? null, isComponentRequired: input.isComponentRequired ?? false, isDefaultComponent: input.isDefaultComponent ?? false, sequence: input.sequence ?? null, productComponentGroupId: input.productComponentGroupId ?? null });
+    return { ok: true, data: { componentId, parentProductId: input.parentProductId, childProductId: input.childProductId }, meta: this.meta() };
+  }
+
+  async removeBundleComponent(input: RemoveBundleComponentInput): Promise<ToolResult<RemoveBundleComponentResult>> {
+    if (!this.bundleComponents.delete(input.componentId)) return { ok: false, error: { code: "NOT_FOUND", message: "Bundle component not found", retryable: false }, meta: this.meta() };
+    return { ok: true, data: { componentId: input.componentId, removed: true }, meta: this.meta() };
+  }
+
+  async updateBundleComponent(input: UpdateBundleComponentInput): Promise<ToolResult<BundleComponentResult>> {
+    const component = this.bundleComponents.get(input.componentId);
+    if (!component) return { ok: false, error: { code: "NOT_FOUND", message: "Bundle component not found", retryable: false }, meta: this.meta() };
+    for (const key of ["quantity", "minQuantity", "maxQuantity", "isComponentRequired", "isDefaultComponent", "sequence", "productComponentGroupId"] as const) if (input[key] !== undefined) (component as any)[key] = input[key];
+    return { ok: true, data: { componentId: component.componentId, parentProductId: component.parentProductId, childProductId: component.childProductId }, meta: this.meta() };
   }
 
   async createInitialQuote(input: CreateInitialQuoteInput): Promise<ToolResult<QuoteResult>> {

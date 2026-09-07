@@ -23,7 +23,26 @@ import {
   QuoteIdInput,
   QuoteSummary,
   ToolResult,
+  CreateProductInput, UpdateProductInput, ProductResult, SetProductPriceInput, ProductPriceResult,
+  BundleIdInput, BundleStructure, AddBundleComponentInput, BundleComponentResult,
+  RemoveBundleComponentInput, RemoveBundleComponentResult, UpdateBundleComponentInput,
 } from "@consultantcloud/shared";
+
+const STANDARD_PRICEBOOK_ID = "01sQy00000L8ec5IAB";
+const BUNDLE_RELATIONSHIP_TYPE_ID = "0yoQy000000NafVIAS";
+
+export const SALESFORCE_CAPABILITIES = {
+  objects: ["Account", "Asset", "Product2", "PricebookEntry", "Opportunity", "Quote", "QuoteLineItem", "ProductRelatedComponent"],
+  flowActions: [
+    "quotingAI__getAccountAssets",
+    "quotingAI__createInitialQuoteOnOpp",
+    "quotingAI__createRenewalQuote",
+    "quotingAI__createAmendmentQuote",
+    "quotingAI__getProdtSellModelForPrdct",
+    "quotingAI__addQuoteLineItemToQuote",
+    "quotingAI__applyDiscountToQuoteLine",
+  ],
+} as const;
 
 const flowActionBreaker = new CircuitBreaker();
 
@@ -181,13 +200,13 @@ export class SalesforceRevenueGateway implements RevenueGateway {
 
   async searchProducts(input: ProductSearchInput): Promise<ToolResult<ProductSummary[]>> {
     try {
-      let soql = "SELECT Id, Name FROM Product2 WHERE IsActive = true";
+      let soql = "SELECT Id, Name, ProductCode, Family, Type, IsActive FROM Product2 WHERE IsActive = true";
       if (input.query.length > 0) {
         const escaped = escapeSoqlLike(input.query);
         soql += ` AND Name LIKE '%${escaped}%'`;
       }
       soql += " LIMIT 20";
-      const products = await this.conn.query<{ Id: string; Name: string }>(soql);
+      const products = await this.conn.query<{ Id: string; Name: string; ProductCode: string | null; Family: string | null; Type: string | null; IsActive: boolean }>(soql);
       if (products.records.length === 0) {
         return { ok: true, data: [], meta: meta() };
       }
@@ -204,6 +223,7 @@ export class SalesforceRevenueGateway implements RevenueGateway {
         id: p.Id,
         name: p.Name,
         listPrice: priceMap.get(p.Id) ?? null,
+        productCode: p.ProductCode ?? null, family: p.Family ?? null, type: p.Type ?? null, isActive: p.IsActive,
       }));
       return { ok: true, data, meta: meta() };
     } catch (err) {
@@ -213,6 +233,72 @@ export class SalesforceRevenueGateway implements RevenueGateway {
         meta: meta(),
       };
     }
+  }
+
+  async createProduct(input: CreateProductInput): Promise<ToolResult<ProductResult>> {
+    try {
+      const fields: Record<string, unknown> = { Name: input.name };
+      const mapping = { productCode: "ProductCode", description: "Description", isActive: "IsActive", family: "Family", type: "Type", isSoldOnlyWithOtherProds: "IsSoldOnlyWithOtherProds", quantityUnitOfMeasure: "QuantityUnitOfMeasure", stockKeepingUnit: "StockKeepingUnit" } as const;
+      for (const [key, field] of Object.entries(mapping)) if (input[key as keyof typeof mapping] !== undefined) fields[field] = input[key as keyof typeof mapping];
+      const created = await this.conn.sobject("Product2").create(fields);
+      return { ok: true, data: { productId: created.id as string, name: input.name }, meta: meta() };
+    } catch (err) { return { ok: false, error: { code: "SALESFORCE_ERROR", message: String(err), retryable: true }, meta: meta() }; }
+  }
+
+  async updateProduct(input: UpdateProductInput): Promise<ToolResult<ProductResult>> {
+    try {
+      const fields: Record<string, unknown> & { Id: string } = { Id: input.productId };
+      const mapping = { name: "Name", productCode: "ProductCode", description: "Description", isActive: "IsActive", family: "Family", type: "Type", isSoldOnlyWithOtherProds: "IsSoldOnlyWithOtherProds", quantityUnitOfMeasure: "QuantityUnitOfMeasure", stockKeepingUnit: "StockKeepingUnit" } as const;
+      for (const [key, field] of Object.entries(mapping)) if (input[key as keyof typeof mapping] !== undefined) fields[field] = input[key as keyof typeof mapping];
+      await this.conn.sobject("Product2").update(fields);
+      const records = await this.conn.query<{ Name: string }>(`SELECT Name FROM Product2 WHERE Id = '${escapeSoql(input.productId)}'`);
+      return { ok: true, data: { productId: input.productId, name: records.records[0]?.Name ?? input.name ?? input.productId }, meta: meta() };
+    } catch (err) { return { ok: false, error: { code: "SALESFORCE_ERROR", message: String(err), retryable: true }, meta: meta() }; }
+  }
+
+  async setProductPrice(input: SetProductPriceInput): Promise<ToolResult<ProductPriceResult>> {
+    try {
+      const records = await this.conn.query<{ Id: string }>(`SELECT Id FROM PricebookEntry WHERE Product2Id = '${escapeSoql(input.productId)}' AND Pricebook2Id = '${STANDARD_PRICEBOOK_ID}' LIMIT 1`);
+      let pricebookEntryId = records.records[0]?.Id;
+      if (pricebookEntryId) await this.conn.sobject("PricebookEntry").update({ Id: pricebookEntryId, UnitPrice: input.unitPrice, ...(input.isActive !== undefined ? { IsActive: input.isActive } : {}) });
+      else { const created = await this.conn.sobject("PricebookEntry").create({ Pricebook2Id: STANDARD_PRICEBOOK_ID, Product2Id: input.productId, UnitPrice: input.unitPrice, IsActive: input.isActive ?? true }); pricebookEntryId = created.id as string; }
+      return { ok: true, data: { pricebookEntryId, productId: input.productId, unitPrice: input.unitPrice }, meta: meta() };
+    } catch (err) { return { ok: false, error: { code: "SALESFORCE_ERROR", message: String(err), retryable: true }, meta: meta() }; }
+  }
+
+  async getBundleStructure(input: BundleIdInput): Promise<ToolResult<BundleStructure>> {
+    try {
+      const records = await this.conn.query<any>(`SELECT Id, ParentProductId, ChildProductId, ChildProduct.Name, ChildProduct.ProductCode, Quantity, MinQuantity, MaxQuantity, IsComponentRequired, IsDefaultComponent, Sequence, ProductComponentGroupId FROM ProductRelatedComponent WHERE ParentProductId = '${escapeSoql(input.productId)}' ORDER BY Sequence ASC NULLS LAST`);
+      return { ok: true, data: { productId: input.productId, components: records.records.map((r: any) => ({ componentId: r.Id, parentProductId: r.ParentProductId, childProductId: r.ChildProductId, childName: r.ChildProduct?.Name ?? "Unknown", childProductCode: r.ChildProduct?.ProductCode ?? null, quantity: r.Quantity ?? null, minQuantity: r.MinQuantity ?? null, maxQuantity: r.MaxQuantity ?? null, isComponentRequired: r.IsComponentRequired ?? false, isDefaultComponent: r.IsDefaultComponent ?? false, sequence: r.Sequence ?? null, productComponentGroupId: r.ProductComponentGroupId ?? null })) }, meta: meta() };
+    } catch (err) { return { ok: false, error: { code: "SALESFORCE_ERROR", message: String(err), retryable: true }, meta: meta() }; }
+  }
+
+  async addBundleComponent(input: AddBundleComponentInput): Promise<ToolResult<BundleComponentResult>> {
+    try {
+      const fields: Record<string, unknown> = { ParentProductId: input.parentProductId, ChildProductId: input.childProductId, ProductRelationshipTypeId: BUNDLE_RELATIONSHIP_TYPE_ID };
+      const mapping = { quantity: "Quantity", minQuantity: "MinQuantity", maxQuantity: "MaxQuantity", isComponentRequired: "IsComponentRequired", isDefaultComponent: "IsDefaultComponent", sequence: "Sequence", productComponentGroupId: "ProductComponentGroupId" } as const;
+      for (const [key, field] of Object.entries(mapping)) if (input[key as keyof typeof mapping] !== undefined) fields[field] = input[key as keyof typeof mapping];
+      const created = await this.conn.sobject("ProductRelatedComponent").create(fields);
+      return { ok: true, data: { componentId: created.id as string, parentProductId: input.parentProductId, childProductId: input.childProductId }, meta: meta() };
+    } catch (err) { return { ok: false, error: { code: "SALESFORCE_ERROR", message: String(err), retryable: true }, meta: meta() }; }
+  }
+
+  async removeBundleComponent(input: RemoveBundleComponentInput): Promise<ToolResult<RemoveBundleComponentResult>> {
+    try { await this.conn.sobject("ProductRelatedComponent").destroy(input.componentId); return { ok: true, data: { componentId: input.componentId, removed: true }, meta: meta() }; }
+    catch (err) { return { ok: false, error: { code: "SALESFORCE_ERROR", message: String(err), retryable: true }, meta: meta() }; }
+  }
+
+  async updateBundleComponent(input: UpdateBundleComponentInput): Promise<ToolResult<BundleComponentResult>> {
+    try {
+      const existing = await this.conn.query<{ ParentProductId: string; ChildProductId: string }>(`SELECT ParentProductId, ChildProductId FROM ProductRelatedComponent WHERE Id = '${escapeSoql(input.componentId)}'`);
+      const component = existing.records[0];
+      if (!component) return { ok: false, error: { code: "NOT_FOUND", message: "Bundle component not found", retryable: false }, meta: meta() };
+      const fields: Record<string, unknown> & { Id: string } = { Id: input.componentId };
+      const mapping = { quantity: "Quantity", minQuantity: "MinQuantity", maxQuantity: "MaxQuantity", isComponentRequired: "IsComponentRequired", isDefaultComponent: "IsDefaultComponent", sequence: "Sequence", productComponentGroupId: "ProductComponentGroupId" } as const;
+      for (const [key, field] of Object.entries(mapping)) if (input[key as keyof typeof mapping] !== undefined) fields[field] = input[key as keyof typeof mapping];
+      await this.conn.sobject("ProductRelatedComponent").update(fields);
+      return { ok: true, data: { componentId: input.componentId, parentProductId: component.ParentProductId, childProductId: component.ChildProductId }, meta: meta() };
+    } catch (err) { return { ok: false, error: { code: "SALESFORCE_ERROR", message: String(err), retryable: true }, meta: meta() }; }
   }
 
   async createInitialQuote(input: CreateInitialQuoteInput): Promise<ToolResult<QuoteResult>> {
@@ -391,8 +477,24 @@ export class SalesforceRevenueGateway implements RevenueGateway {
 
   async createAmendmentQuote(input: CreateAmendmentQuoteInput): Promise<ToolResult<QuoteResult>> {
     try {
-      const { isSuccess, outputValues } = await invokeFlowAction(this.conn, "quotingAI__createAmendQuote", {
-        quoteId: input.sourceQuoteId,
+      const assetsResult = await this.getAccountAssets({ accountId: input.accountId });
+      if (!assetsResult.ok) {
+        return {
+          ok: false,
+          error: { code: "NO_AMENDABLE_ASSETS", message: "No existing assets found for this account to amend", retryable: false },
+          meta: meta(),
+        };
+      }
+      const assetIds = (assetsResult.data ?? []).map((a) => a.id);
+      if (assetIds.length === 0) {
+        return {
+          ok: false,
+          error: { code: "NO_AMENDABLE_ASSETS", message: "No existing assets found for this account to amend", retryable: false },
+          meta: meta(),
+        };
+      }
+      const { isSuccess, outputValues } = await invokeFlowAction(this.conn, "quotingAI__createAmendmentQuote", {
+        assetIds,
       });
       const amendmentQuoteId = (outputValues as { amendmentQuoteId?: string } | null)?.amendmentQuoteId;
       if (!isSuccess || !amendmentQuoteId) {

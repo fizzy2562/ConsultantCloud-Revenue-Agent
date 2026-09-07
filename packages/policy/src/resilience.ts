@@ -3,12 +3,15 @@ export interface RetryOptions {
   baseDelayMs?: number;
 }
 
+export const retryDefaults = { maxAttempts: 3, baseDelayMs: 200 } as const;
+export const circuitBreakerDefaults = { failureThreshold: 3, cooldownMs: 30_000 } as const;
+
 export async function withRetry<T>(
   fn: () => Promise<T>,
   options: RetryOptions = {}
 ): Promise<T> {
-  const maxAttempts = options.maxAttempts ?? 3;
-  const baseDelayMs = options.baseDelayMs ?? 200;
+  const maxAttempts = options.maxAttempts ?? retryDefaults.maxAttempts;
+  const baseDelayMs = options.baseDelayMs ?? retryDefaults.baseDelayMs;
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -46,8 +49,8 @@ export class CircuitBreaker {
   private readonly cooldownMs: number;
 
   constructor(options: CircuitBreakerOptions = {}) {
-    this.failureThreshold = options.failureThreshold ?? 3;
-    this.cooldownMs = options.cooldownMs ?? 30_000;
+    this.failureThreshold = options.failureThreshold ?? circuitBreakerDefaults.failureThreshold;
+    this.cooldownMs = options.cooldownMs ?? circuitBreakerDefaults.cooldownMs;
   }
 
   async execute<T>(fn: () => Promise<T>): Promise<T> {

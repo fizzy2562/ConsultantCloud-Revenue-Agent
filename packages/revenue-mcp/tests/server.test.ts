@@ -38,6 +38,8 @@ describe("Revenue MCP server", () => {
         "remove_quote_line",
         "update_quote_line",
         "apply_discount",
+        "create_product", "update_product", "set_product_price", "get_bundle_structure",
+        "add_bundle_component", "remove_bundle_component", "update_bundle_component",
       ].sort()
     );
   });

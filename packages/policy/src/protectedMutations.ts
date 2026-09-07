@@ -3,9 +3,33 @@ export type MutationAction =
   | "create_renewal_quote"
   | "submit_quote"
   | "create_amendment_quote"
+  | "add_quote_line"
   | "remove_quote_line"
   | "update_quote_line"
-  | "apply_discount";
+  | "apply_discount"
+  | "create_product"
+  | "update_product"
+  | "set_product_price"
+  | "add_bundle_component"
+  | "remove_bundle_component"
+  | "update_bundle_component";
+
+export const protectedMutationActions: MutationAction[] = [
+  "create_initial_quote",
+  "create_renewal_quote",
+  "submit_quote",
+  "create_amendment_quote",
+  "add_quote_line",
+  "remove_quote_line",
+  "update_quote_line",
+  "apply_discount",
+  "create_product",
+  "update_product",
+  "set_product_price",
+  "add_bundle_component",
+  "remove_bundle_component",
+  "update_bundle_component",
+];
 
 export function isProtectedMutation(
   action: MutationAction,
@@ -16,8 +40,11 @@ export function isProtectedMutation(
     action === "create_renewal_quote" ||
     action === "submit_quote" ||
     action === "create_amendment_quote" ||
+    action === "add_quote_line" ||
     action === "remove_quote_line" ||
-    action === "update_quote_line"
+    action === "update_quote_line" ||
+    action === "create_product" || action === "update_product" || action === "set_product_price" ||
+    action === "add_bundle_component" || action === "remove_bundle_component" || action === "update_bundle_component"
   ) {
     return true;
   }

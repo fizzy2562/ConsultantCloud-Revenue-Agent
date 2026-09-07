@@ -1,5 +1,10 @@
 :root {
   --cc-blue: #3d7fab;
   --cc-green: #51ac52;
+  --cc-blue-text: #2f6690;
+  --cc-green-text: #2c7a2e;
   --cc-gradient: linear-gradient(135deg, var(--cc-blue), var(--cc-green));
+  --cc-border: #bdd5e3;
+  --cc-border-strong: #8db8d1;
+  --cc-surface-blue: #f4f8fb;
 }

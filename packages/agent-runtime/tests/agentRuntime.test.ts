@@ -19,6 +19,25 @@ afterEach(() => {
 });
 
 describe("agent runtime", () => {
+  it.each([
+    ["user", ["create_initial_quote", "apply_discount"], ["create_product", "get_bundle_structure"]],
+    ["architect", ["create_product", "get_bundle_structure"], ["create_initial_quote", "apply_discount"]],
+  ] as const)("exposes only %s-mode mutations", async (mode, included, excluded) => {
+    const fetchMock = vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "Done." }));
+    vi.stubGlobal("fetch", fetchMock);
+    await runAgentTurn({ kind: "message", text: "help", history: [], mode }, new MockRevenueGateway());
+    const request = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+    const names = request.tools.map((tool: any) => tool.function.name);
+    for (const name of included) expect(names).toContain(name);
+    for (const name of excluded) expect(names).not.toContain(name);
+  });
+
+  it("gates an architect catalog mutation before execution", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "", tool_calls: [{ function: { name: "create_product", arguments: { name: "Architect Product", family: "Software" } } }] })));
+    const gateway = new MockRevenueGateway(); const spy = vi.spyOn(gateway, "createProduct");
+    const result = await runAgentTurn({ kind: "message", text: "Create it", history: [], mode: "architect" }, gateway);
+    expect(spy).not.toHaveBeenCalled(); expect(result.pendingConfirmation?.toolName).toBe("create_product");
+  });
   it("uses one supplied runId across tool calls and falls back to a different generated ID", async () => {
     const eventFile = "./revenue-mcp-events.jsonl";
     if (existsSync(eventFile)) unlinkSync(eventFile);

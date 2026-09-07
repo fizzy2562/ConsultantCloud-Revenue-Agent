@@ -12,5 +12,5 @@ export function createSalesforceConnection(): Connection {
     );
   }
 
-  return new Connection({ instanceUrl, accessToken });
+  return new Connection({ instanceUrl, accessToken, version: "62.0" });
 }

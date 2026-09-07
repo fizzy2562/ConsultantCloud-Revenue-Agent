@@ -34,6 +34,9 @@ describe("evaluateDiscount", () => {
 });
 
 describe("requireConfirmation", () => {
+  it.each(["create_product", "update_product", "set_product_price", "add_bundle_component", "remove_bundle_component", "update_bundle_component"] as const)("protects catalog mutation %s", (action) => {
+    expect(requireConfirmation(action, { confirmedByUser: false }).satisfied).toBe(false);
+  });
   it("marks an unconfirmed protected mutation as unsatisfied", () => {
     const result = requireConfirmation("create_initial_quote", { confirmedByUser: false });
     expect(result.satisfied).toBe(false);

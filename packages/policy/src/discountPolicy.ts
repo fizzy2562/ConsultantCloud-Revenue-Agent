@@ -25,6 +25,12 @@ export const discountThresholds: ThresholdRule[] = [
   },
 ];
 
+export const discountPolicyBands = [
+  { minPercent: 0, maxPercent: 15, decision: "permitted" },
+  { minPercent: 15, maxPercent: 25, decision: "approval_required", reason: "Discount exceeds 15% and requires manager approval" },
+  { minPercent: 25, maxPercent: null, decision: "rejected", reason: "Discount exceeds the maximum permitted threshold of 25%" },
+] as const;
+
 export function evaluateDiscount(percent: number): DiscountEvaluation {
   if (Number.isNaN(percent) || !Number.isFinite(percent) || percent < 0) {
     return { decision: "rejected", reason: "Invalid discount percent" };

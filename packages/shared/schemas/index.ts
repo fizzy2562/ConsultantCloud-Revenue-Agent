@@ -61,6 +61,10 @@ export const ProductSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
   listPrice: z.number().nullable(),
+  productCode: z.string().nullable().optional(),
+  family: z.string().nullable().optional(),
+  type: z.string().nullable().optional(),
+  isActive: z.boolean().optional(),
 });
 
 export const ProductSearchOutputSchema = z.array(ProductSummarySchema);
@@ -181,3 +185,23 @@ export const DiscountResultSchema = z.object({
   quoteLineId: z.string(),
   appliedDiscountPercent: z.number().min(0).max(100),
 });
+
+const ProductFieldsSchema = z.object({
+  name: z.string().min(1).optional(), productCode: z.string().optional(), description: z.string().optional(),
+  isActive: z.boolean().optional(), family: z.string().optional(), type: z.string().nullable().optional(),
+  isSoldOnlyWithOtherProds: z.boolean().optional(), quantityUnitOfMeasure: z.string().optional(), stockKeepingUnit: z.string().optional(),
+});
+const MutationControlSchema = { idempotencyKey: z.string().min(1), confirmedByUser: z.boolean() };
+export const CreateProductInputSchema = ProductFieldsSchema.extend({ name: z.string().min(1), ...MutationControlSchema }).strict();
+export const UpdateProductInputSchema = ProductFieldsSchema.extend({ productId: z.string().min(1), ...MutationControlSchema }).strict();
+export const ProductResultSchema = z.object({ productId: z.string().min(1), name: z.string().min(1) });
+export const SetProductPriceInputSchema = z.object({ productId: z.string().min(1), unitPrice: z.number().nonnegative(), isActive: z.boolean().optional(), ...MutationControlSchema }).strict();
+export const ProductPriceResultSchema = z.object({ pricebookEntryId: z.string().min(1), productId: z.string().min(1), unitPrice: z.number() });
+export const BundleIdInputSchema = z.object({ productId: z.string().min(1) }).strict();
+export const BundleComponentSchema = z.object({ componentId: z.string(), parentProductId: z.string(), childProductId: z.string(), childName: z.string(), childProductCode: z.string().nullable(), quantity: z.number().nullable(), minQuantity: z.number().nullable(), maxQuantity: z.number().nullable(), isComponentRequired: z.boolean(), isDefaultComponent: z.boolean(), sequence: z.number().int().nullable(), productComponentGroupId: z.string().nullable() });
+export const BundleStructureSchema = z.object({ productId: z.string(), components: z.array(BundleComponentSchema) });
+export const AddBundleComponentInputSchema = z.object({ parentProductId: z.string().min(1), childProductId: z.string().min(1), quantity: z.number().nonnegative().optional(), minQuantity: z.number().nonnegative().optional(), maxQuantity: z.number().nonnegative().optional(), isComponentRequired: z.boolean().optional(), isDefaultComponent: z.boolean().optional(), sequence: z.number().int().nonnegative().optional(), productComponentGroupId: z.string().min(1).optional(), ...MutationControlSchema }).strict();
+export const BundleComponentResultSchema = z.object({ componentId: z.string().min(1), parentProductId: z.string().min(1), childProductId: z.string().min(1) });
+export const RemoveBundleComponentInputSchema = z.object({ componentId: z.string().min(1), ...MutationControlSchema }).strict();
+export const RemoveBundleComponentResultSchema = z.object({ componentId: z.string().min(1), removed: z.literal(true) });
+export const UpdateBundleComponentInputSchema = z.object({ componentId: z.string().min(1), quantity: z.number().nonnegative().optional(), minQuantity: z.number().nonnegative().optional(), maxQuantity: z.number().nonnegative().optional(), isComponentRequired: z.boolean().optional(), isDefaultComponent: z.boolean().optional(), sequence: z.number().int().nonnegative().optional(), productComponentGroupId: z.string().min(1).nullable().optional(), ...MutationControlSchema }).strict();

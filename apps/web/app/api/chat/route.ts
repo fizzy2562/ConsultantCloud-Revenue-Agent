@@ -13,17 +13,18 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  const input = body as { kind?: unknown; conversationId?: unknown };
+  const input = body as { kind?: unknown; conversationId?: unknown; mode?: unknown };
   if (
     typeof input.conversationId !== "string" ||
     typeof input.kind !== "string" ||
-    (input.kind !== "message" && input.kind !== "confirm" && input.kind !== "cancel")
+    (input.kind !== "message" && input.kind !== "confirm" && input.kind !== "cancel") ||
+    (input.mode !== undefined && input.mode !== "user" && input.mode !== "architect")
   ) {
     return Response.json({ error: "Invalid request" }, { status: 400 });
   }
 
   try {
-    const result = await runAgentTurn(input as unknown as RunAgentTurnInput, gateway, {
+    const result = await runAgentTurn({ ...(input as unknown as RunAgentTurnInput), mode: input.mode === "architect" ? "architect" : "user" }, gateway, {
       runId: input.conversationId,
       ...(process.env.OLLAMA_URL ? { ollamaUrl: process.env.OLLAMA_URL } : {}),
     });

@@ -4,6 +4,7 @@ import type { ToolCallEvent } from "@consultantcloud/shared";
 import type { ZodTypeAny } from "zod";
 import { evaluateDiscount, requireConfirmation, IdempotencyStore, withIdempotency, IdempotencyConflictError } from "@consultantcloud/policy";
 import { logToolCallEvent } from "@consultantcloud/telemetry";
+import { toolRegistration } from "../toolCatalog";
 
 type ResultLike = { ok: boolean; error?: { code: string; message: string; retryable: boolean }; meta: { requestId: string; durationMs: number; source: "salesforce" | "policy" | "mock" }; data?: unknown };
 type EventLogger = { log(event: ToolCallEvent): void };
@@ -25,7 +26,7 @@ function idempotencyConflictResult(err: IdempotencyConflictError) {
 }
 
 export function registerCreateInitialQuote(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
-  server.registerTool("create_initial_quote", { title: "Create Initial Quote", description: "Creates a new quote for an account with no existing quote. This mutates Salesforce (or the mock) state: it creates a real quote record. It requires confirmedByUser: true — if the caller has not obtained explicit user confirmation, this tool returns an error rather than creating anything. Repeated calls with the same idempotencyKey are safe and will not create duplicate quotes; the first result is returned again unchanged.", inputSchema: CreateInitialQuoteInputSchema.shape }, async (args) => {
+  server.registerTool("create_initial_quote", toolRegistration("create_initial_quote"), async (args) => {
     try {
       const confirmation = requireConfirmation("create_initial_quote", { confirmedByUser: args.confirmedByUser });
       const rawResult = !confirmation.satisfied ? { ok: false, error: { code: "CONFIRMATION_REQUIRED", message: confirmation.reason ?? "Confirmation required", retryable: false }, meta: { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" as const } } : await withIdempotency(store, args.idempotencyKey, JSON.stringify(args), () => gateway.createInitialQuote(args), (result) => (result as { ok: boolean }).ok === true);
@@ -41,7 +42,7 @@ export function registerCreateInitialQuote(server: McpServer, gateway: RevenueGa
 }
 
 export function registerCreateRenewalQuote(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
-  server.registerTool("create_renewal_quote", { title: "Create Renewal Quote", description: "Creates a renewal quote for an account that already has an existing quote. This mutates Salesforce (or the mock) state: it creates a real quote record. It requires confirmedByUser: true — if the caller has not obtained explicit user confirmation, this tool returns an error rather than creating anything. Repeated calls with the same idempotencyKey are safe and will not create duplicate quotes; the first result is returned again unchanged.", inputSchema: CreateRenewalQuoteInputSchema.shape }, async (args) => {
+  server.registerTool("create_renewal_quote", toolRegistration("create_renewal_quote"), async (args) => {
     try {
       const confirmation = requireConfirmation("create_renewal_quote", { confirmedByUser: args.confirmedByUser });
       const rawResult = !confirmation.satisfied ? { ok: false, error: { code: "CONFIRMATION_REQUIRED", message: confirmation.reason ?? "Confirmation required", retryable: false }, meta: { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" as const } } : await withIdempotency(store, args.idempotencyKey, JSON.stringify(args), () => gateway.createRenewalQuote(args), (result) => (result as { ok: boolean }).ok === true);
@@ -57,7 +58,7 @@ export function registerCreateRenewalQuote(server: McpServer, gateway: RevenueGa
 }
 
 export function registerCreateAmendmentQuote(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
-  server.registerTool("create_amendment_quote", { title: "Create Amendment Quote", description: "Creates an amendment quote for an account that already has an existing active quote, copying its term length. This mutates Salesforce (or the mock) state: it creates a real quote record. It requires confirmedByUser: true — if the caller has not obtained explicit user confirmation, this tool returns an error rather than creating anything. Repeated calls with the same idempotencyKey are safe and will not create duplicate quotes; the first result is returned again unchanged.", inputSchema: CreateAmendmentQuoteInputSchema.shape }, async (args) => {
+  server.registerTool("create_amendment_quote", toolRegistration("create_amendment_quote"), async (args) => {
     try {
       const confirmation = requireConfirmation("create_amendment_quote", { confirmedByUser: args.confirmedByUser });
       const rawResult = !confirmation.satisfied ? { ok: false, error: { code: "CONFIRMATION_REQUIRED", message: confirmation.reason ?? "Confirmation required", retryable: false }, meta: { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" as const } } : await withIdempotency(store, args.idempotencyKey, JSON.stringify(args), () => gateway.createAmendmentQuote(args), (result) => (result as { ok: boolean }).ok === true);
@@ -73,13 +74,14 @@ export function registerCreateAmendmentQuote(server: McpServer, gateway: Revenue
 }
 
 export function registerAddQuoteLine(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
-  server.registerTool("add_quote_line", { title: "Add Quote Line", description: "Adds a line item to an existing quote. This mutates Salesforce (or the mock) state: it creates a real quote line record on the target quote. Repeated calls with the same idempotencyKey are safe and will not create duplicate line items; the first result is returned again unchanged.", inputSchema: AddQuoteLineInputSchema.shape }, async (args) => {
+  server.registerTool("add_quote_line", toolRegistration("add_quote_line"), async (args) => {
     try {
-      const rawResult = await withIdempotency(store, args.idempotencyKey, JSON.stringify(args), () => gateway.addQuoteLine(args), (result) => (result as { ok: boolean }).ok === true);
-      return respond(logger, "add_quote_line", validateResult(QuoteLineResultSchema, rawResult), {}, runId);
+      const confirmation = requireConfirmation("add_quote_line", { confirmedByUser: args.confirmedByUser });
+      const rawResult = !confirmation.satisfied ? { ok: false, error: { code: "CONFIRMATION_REQUIRED", message: confirmation.reason ?? "Confirmation required", retryable: false }, meta: { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" as const } } : await withIdempotency(store, args.idempotencyKey, JSON.stringify(args), () => gateway.addQuoteLine(args), (result) => (result as { ok: boolean }).ok === true);
+      return respond(logger, "add_quote_line", validateResult(QuoteLineResultSchema, rawResult), { confirmationEvent: args.confirmedByUser ? "confirmed" : "declined" }, runId);
     } catch (err) {
       if (err instanceof IdempotencyConflictError) {
-        return respond(logger, "add_quote_line", validateResult(QuoteLineResultSchema, idempotencyConflictResult(err)), {}, runId);
+        return respond(logger, "add_quote_line", validateResult(QuoteLineResultSchema, idempotencyConflictResult(err)), { confirmationEvent: args.confirmedByUser ? "confirmed" : "declined" }, runId);
       }
       logToolCallEvent(logger, { requestId: crypto.randomUUID(), runId: runId ?? crypto.randomUUID(), toolName: "add_quote_line", durationMs: 0, status: "error", timestamp: new Date().toISOString() });
       throw err;
@@ -88,7 +90,7 @@ export function registerAddQuoteLine(server: McpServer, gateway: RevenueGateway,
 }
 
 export function registerRemoveQuoteLine(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
-  server.registerTool("remove_quote_line", { title: "Remove Quote Line", description: "Removes a line item from an existing quote. This mutates Salesforce (or the mock) state by deleting the target quote line. It requires confirmedByUser: true. Repeated calls with the same idempotencyKey are safe and will not remove the line more than once; the first result is returned again unchanged.", inputSchema: RemoveQuoteLineInputSchema.shape }, async (args) => {
+  server.registerTool("remove_quote_line", toolRegistration("remove_quote_line"), async (args) => {
     try {
       const confirmation = requireConfirmation("remove_quote_line", { confirmedByUser: args.confirmedByUser });
       const rawResult = !confirmation.satisfied ? { ok: false, error: { code: "CONFIRMATION_REQUIRED", message: confirmation.reason ?? "Confirmation required", retryable: false }, meta: { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" as const } } : await withIdempotency(store, args.idempotencyKey, JSON.stringify(args), () => gateway.removeQuoteLine(args), (result) => (result as { ok: boolean }).ok === true);
@@ -102,7 +104,7 @@ export function registerRemoveQuoteLine(server: McpServer, gateway: RevenueGatew
 }
 
 export function registerUpdateQuoteLine(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
-  server.registerTool("update_quote_line", { title: "Update Quote Line", description: "Updates the quantity of an existing quote line. This mutates Salesforce (or the mock) state by changing the target line item's quantity. It requires confirmedByUser: true. Repeated calls with the same idempotencyKey are safe and will not apply the quantity change more than once; the first result is returned again unchanged.", inputSchema: UpdateQuoteLineInputSchema.shape }, async (args) => {
+  server.registerTool("update_quote_line", toolRegistration("update_quote_line"), async (args) => {
     try {
       const confirmation = requireConfirmation("update_quote_line", { confirmedByUser: args.confirmedByUser });
       const rawResult = !confirmation.satisfied ? { ok: false, error: { code: "CONFIRMATION_REQUIRED", message: confirmation.reason ?? "Confirmation required", retryable: false }, meta: { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" as const } } : await withIdempotency(store, args.idempotencyKey, JSON.stringify(args), () => gateway.updateQuoteLine(args), (result) => (result as { ok: boolean }).ok === true);
@@ -116,7 +118,7 @@ export function registerUpdateQuoteLine(server: McpServer, gateway: RevenueGatew
 }
 
 export function registerApplyDiscount(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
-  server.registerTool("apply_discount", { title: "Apply Discount", description: "Applies a discount to an existing quote. This mutates Salesforce (or the mock) state: it updates the quote's discount. Policy bands: 0-15% is permitted without additional approval; 15.01-25% requires manager approval (confirmedByUser: true must be set); above 25% is rejected outright regardless of confirmation. Repeated calls with the same idempotencyKey are safe and will not apply the discount twice; the first result is returned again unchanged.", inputSchema: ApplyDiscountInputSchema.shape }, async (args) => {
+  server.registerTool("apply_discount", toolRegistration("apply_discount"), async (args) => {
     try {
       const evaluation = evaluateDiscount(args.discountPercent);
       let rawResult: unknown;
