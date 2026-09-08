@@ -23,7 +23,7 @@ export function registerCatalogTools(server: McpServer, gateway: RevenueGateway,
       return respond(logger, name, validate(output, raw), runId);
     });
   };
-  server.registerTool("get_bundle_structure", { title: "Get Bundle Structure", description: "Returns the real component records for a bundle product. Read-only.", inputSchema: BundleIdInputSchema.shape }, async (args) => respond(logger, "get_bundle_structure", validate(BundleStructureSchema, await gateway.getBundleStructure!(args)), runId));
+  server.registerTool("get_bundle_structure", { title: "Get Bundle Structure", description: "Returns the real component records for a bundle product. Read-only.", inputSchema: BundleIdInputSchema.shape }, async (args: any) => respond(logger, "get_bundle_structure", validate(BundleStructureSchema, await gateway.getBundleStructure!(args)), runId));
   registerWrite("create_product", "Create Product", CreateProductInputSchema, ProductResultSchema, (a) => gateway.createProduct!(a));
   registerWrite("update_product", "Update Product", UpdateProductInputSchema, ProductResultSchema, (a) => gateway.updateProduct!(a));
   registerWrite("set_product_price", "Set Product Price", SetProductPriceInputSchema, ProductPriceResultSchema, (a) => gateway.setProductPrice!(a));

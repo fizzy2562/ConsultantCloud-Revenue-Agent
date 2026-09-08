@@ -11,7 +11,7 @@ import {
 
 export type ArchitectureSnapshot = Awaited<ReturnType<typeof assembleArchitectureSnapshot>>;
 
-function safeOllamaHost(value: string): string {
+function safeApiHost(value: string): string {
   try {
     const url = new URL(value);
     return url.port ? `${url.hostname}:${url.port}` : url.hostname;
@@ -42,8 +42,8 @@ export async function assembleArchitectureSnapshot(now: Date = new Date()) {
   const hasInstanceUrl = Boolean(process.env.SF_INSTANCE_URL);
   const hasAccessToken = Boolean(process.env.SF_ACCESS_TOKEN);
   const salesforceConfigured = hasInstanceUrl && hasAccessToken;
-  const configuredOllamaUrl = process.env.OLLAMA_URL ?? AGENT_RUNTIME_DEFAULTS.ollamaUrl;
-  const model = AGENT_RUNTIME_DEFAULTS.model;
+  const configuredApiUrl = process.env.LLM_API_URL ?? AGENT_RUNTIME_DEFAULTS.apiUrl;
+  const model = process.env.LLM_MODEL ?? AGENT_RUNTIME_DEFAULTS.model;
   const agentforce = await agentforceContract();
 
   const warnings = [
@@ -66,7 +66,7 @@ export async function assembleArchitectureSnapshot(now: Date = new Date()) {
     },
     agentRuntime: {
       model,
-      ollamaHost: safeOllamaHost(configuredOllamaUrl),
+      apiHost: safeApiHost(configuredApiUrl),
       toolLoopLimit: AGENT_RUNTIME_DEFAULTS.toolLoopLimit,
       confirmationRequired: AGENT_RUNTIME_DEFAULTS.confirmationRequired,
     },

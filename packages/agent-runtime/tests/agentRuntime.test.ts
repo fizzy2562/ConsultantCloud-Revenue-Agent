@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MockRevenueGateway } from "@consultantcloud/shared";
 import { runAgentTurn, type PendingConfirmation } from "../src/index.js";
 import type { ToolCallEvent } from "@consultantcloud/shared";
@@ -6,12 +6,21 @@ import { existsSync, readFileSync, unlinkSync } from "node:fs";
 
 const accountId = "001000000000001AAA";
 
-function ollamaResponse(message: Record<string, unknown>): Response {
-  return new Response(JSON.stringify({ message }), {
+function chatCompletionResponse(message: Record<string, any>): Response {
+  const toolCalls = message.tool_calls?.map((call: Record<string, any>, index: number) => ({
+    id: call.id ?? `call-${index}`,
+    type: "function",
+    function: { ...call.function, arguments: JSON.stringify(call.function.arguments) },
+  }));
+  return new Response(JSON.stringify({ choices: [{ index: 0, message: { ...message, ...(toolCalls ? { tool_calls: toolCalls } : {}) }, finish_reason: toolCalls ? "tool_calls" : "stop" }] }), {
     status: 200,
     headers: { "content-type": "application/json" },
   });
 }
+
+beforeEach(() => {
+  process.env.LLM_API_KEY = "test-llm-api-key";
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -23,17 +32,27 @@ describe("agent runtime", () => {
     ["user", ["create_initial_quote", "apply_discount"], ["create_product", "get_bundle_structure"]],
     ["architect", ["create_product", "get_bundle_structure"], ["create_initial_quote", "apply_discount"]],
   ] as const)("exposes only %s-mode mutations", async (mode, included, excluded) => {
-    const fetchMock = vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "Done." }));
+    const fetchMock = vi.fn().mockResolvedValue(chatCompletionResponse({ role: "assistant", content: "Done." }));
     vi.stubGlobal("fetch", fetchMock);
     await runAgentTurn({ kind: "message", text: "help", history: [], mode }, new MockRevenueGateway());
     const request = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+    expect(fetchMock.mock.calls[0]![0]).toBe("https://openrouter.ai/api/v1/chat/completions");
+    expect(fetchMock.mock.calls[0]![1].headers).toMatchObject({ authorization: "Bearer test-llm-api-key" });
+    expect(request).toMatchObject({
+      model: "liquid/lfm-2.5-2.6b:free",
+      tool_choice: "auto",
+      stream: false,
+      max_tokens: 2048,
+    });
+    expect(request).not.toHaveProperty("think");
+    expect(request).not.toHaveProperty("chat_template_kwargs");
     const names = request.tools.map((tool: any) => tool.function.name);
     for (const name of included) expect(names).toContain(name);
     for (const name of excluded) expect(names).not.toContain(name);
   });
 
   it("gates an architect catalog mutation before execution", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "", tool_calls: [{ function: { name: "create_product", arguments: { name: "Architect Product", family: "Software" } } }] })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({ role: "assistant", content: "", tool_calls: [{ function: { name: "create_product", arguments: { name: "Architect Product", family: "Software" } } }] })));
     const gateway = new MockRevenueGateway(); const spy = vi.spyOn(gateway, "createProduct");
     const result = await runAgentTurn({ kind: "message", text: "Create it", history: [], mode: "architect" }, gateway);
     expect(spy).not.toHaveBeenCalled(); expect(result.pendingConfirmation?.toolName).toBe("create_product");
@@ -42,8 +61,8 @@ describe("agent runtime", () => {
     const eventFile = "./revenue-mcp-events.jsonl";
     if (existsSync(eventFile)) unlinkSync(eventFile);
     const readTurn = () => vi.fn()
-      .mockResolvedValueOnce(ollamaResponse({ role: "assistant", content: "", tool_calls: [{ function: { name: "find_account", arguments: { name: "Acme" } } }] }))
-      .mockResolvedValueOnce(ollamaResponse({ role: "assistant", content: "Done." }));
+      .mockResolvedValueOnce(chatCompletionResponse({ role: "assistant", content: "", tool_calls: [{ function: { name: "find_account", arguments: { name: "Acme" } } }] }))
+      .mockResolvedValueOnce(chatCompletionResponse({ role: "assistant", content: "Done." }));
 
     vi.stubGlobal("fetch", readTurn());
     await runAgentTurn({ kind: "message", text: "Find Acme", history: [] }, new MockRevenueGateway(), { runId: "conversation-123" });
@@ -60,12 +79,12 @@ describe("agent runtime", () => {
 
   it("executes read tools and feeds their real results back to the model", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(ollamaResponse({
+      .mockResolvedValueOnce(chatCompletionResponse({
         role: "assistant",
         content: "",
         tool_calls: [{ function: { name: "find_account", arguments: { name: "Acme" } } }],
       }))
-      .mockResolvedValueOnce(ollamaResponse({
+      .mockResolvedValueOnce(chatCompletionResponse({
         role: "assistant",
         content: "I found Acme University.",
       }));
@@ -82,18 +101,18 @@ describe("agent runtime", () => {
       { tool: "find_account", badge: "READ", blocked: false, summary: "Acme University found" },
     ]);
     const secondRequest = JSON.parse(fetchMock.mock.calls[1]![1].body as string);
-    expect(secondRequest.messages.at(-1)).toMatchObject({ role: "tool", tool_name: "find_account" });
+    expect(secondRequest.messages.at(-1)).toMatchObject({ role: "tool", tool_call_id: "call-0" });
     expect(JSON.parse(secondRequest.messages.at(-1).content).data[0].name).toBe("Acme University");
   });
 
   it("resolves a display quote number before executing a read with quoteId", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(ollamaResponse({
+      .mockResolvedValueOnce(chatCompletionResponse({
         role: "assistant",
         content: "",
         tool_calls: [{ function: { name: "get_quote_summary", arguments: { quoteId: "Q-10000" } } }],
       }))
-      .mockResolvedValueOnce(ollamaResponse({ role: "assistant", content: "Quote found." }));
+      .mockResolvedValueOnce(chatCompletionResponse({ role: "assistant", content: "Quote found." }));
     vi.stubGlobal("fetch", fetchMock);
     const gateway = new MockRevenueGateway();
     const quoteSpy = vi.spyOn(gateway, "getQuoteSummary");
@@ -109,7 +128,7 @@ describe("agent runtime", () => {
   });
 
   it("stores a resolved quote ID in a mutation confirmation and uses it when confirmed", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({
       role: "assistant",
       content: "",
       tool_calls: [{
@@ -128,7 +147,7 @@ describe("agent runtime", () => {
     );
 
     expect(proposed.pendingConfirmation?.args.quoteId).toBe("a0Q000000000001AAA");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "Done." })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({ role: "assistant", content: "Done." })));
     await runAgentTurn(
       { kind: "confirm", pending: proposed.pendingConfirmation!, history: [] },
       gateway
@@ -139,12 +158,12 @@ describe("agent runtime", () => {
   it("passes a Salesforce quote ID through without an extra lookup", async () => {
     const quoteId = "a0Q000000000001AAA";
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(ollamaResponse({
+      .mockResolvedValueOnce(chatCompletionResponse({
         role: "assistant",
         content: "",
         tool_calls: [{ function: { name: "get_quote_summary", arguments: { quoteId } } }],
       }))
-      .mockResolvedValueOnce(ollamaResponse({ role: "assistant", content: "Done." }));
+      .mockResolvedValueOnce(chatCompletionResponse({ role: "assistant", content: "Done." }));
     vi.stubGlobal("fetch", fetchMock);
     const gateway = new MockRevenueGateway();
     const quoteSpy = vi.spyOn(gateway, "getQuoteSummary");
@@ -156,7 +175,7 @@ describe("agent runtime", () => {
   });
 
   it("turns a model-requested mutation into a pending confirmation without executing it", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({
       role: "assistant",
       content: "",
       tool_calls: [{
@@ -190,7 +209,7 @@ describe("agent runtime", () => {
 
   it("rejects a fabricated mutation ID before it reaches the gateway", async () => {
     const fabricatedId = "001999999999999AAA";
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({
       role: "assistant", content: "", tool_calls: [{ function: { name: "create_initial_quote", arguments: { accountId: fabricatedId, termMonths: 12 } } }],
     })));
     const gateway = new MockRevenueGateway();
@@ -222,21 +241,21 @@ describe("agent runtime", () => {
 
   it("accepts an ID returned by an earlier successful tool call and retains its provenance through confirmation", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(ollamaResponse({ role: "assistant", content: "", tool_calls: [{ function: { name: "find_account", arguments: { name: "Acme" } } }] }))
-      .mockResolvedValueOnce(ollamaResponse({ role: "assistant", content: "", tool_calls: [{ function: { name: "create_initial_quote", arguments: { accountId, termMonths: 12 } } }] }));
+      .mockResolvedValueOnce(chatCompletionResponse({ role: "assistant", content: "", tool_calls: [{ function: { name: "find_account", arguments: { name: "Acme" } } }] }))
+      .mockResolvedValueOnce(chatCompletionResponse({ role: "assistant", content: "", tool_calls: [{ function: { name: "create_initial_quote", arguments: { accountId, termMonths: 12 } } }] }));
     vi.stubGlobal("fetch", fetchMock);
     const gateway = new MockRevenueGateway();
     const mutationSpy = vi.spyOn(gateway, "createInitialQuote");
     const proposed = await runAgentTurn({ kind: "message", text: "Find Acme and create a quote", history: [] }, gateway);
     expect(proposed.pendingConfirmation?.provenanceIds).toContain(accountId);
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "Done." })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({ role: "assistant", content: "Done." })));
     await runAgentTurn({ kind: "confirm", pending: proposed.pendingConfirmation!, history: [] }, gateway);
     expect(mutationSpy).toHaveBeenCalledOnce();
   });
 
   it("accepts a Salesforce ID typed verbatim by the user", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({
       role: "assistant", content: "", tool_calls: [{ function: { name: "create_initial_quote", arguments: { accountId, termMonths: 12 } } }],
     })));
     const result = await runAgentTurn({ kind: "message", text: `Create a quote for ${accountId}`, history: [] }, new MockRevenueGateway());
@@ -244,7 +263,7 @@ describe("agent runtime", () => {
   });
 
   it("gates create_amendment_quote and calls the gateway only after confirmation", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({
       role: "assistant",
       content: "",
       tool_calls: [{
@@ -274,7 +293,7 @@ describe("agent runtime", () => {
       },
     });
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "Done." })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({ role: "assistant", content: "Done." })));
     await runAgentTurn({ kind: "confirm", pending: proposed.pendingConfirmation!, history: [] }, gateway);
 
     expect(mutationSpy).toHaveBeenCalledOnce();
@@ -287,7 +306,7 @@ describe("agent runtime", () => {
   });
 
   it("executes a pending mutation only on confirmation with runtime-controlled authorization", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({
       role: "assistant",
       content: "The renewal is ready.",
     })));
@@ -322,7 +341,7 @@ describe("agent runtime", () => {
     ["remove_quote_line", { quoteLineId: "a0L000000000001AAA" }, "removeQuoteLine", "Ready to remove quote line"],
     ["update_quote_line", { quoteLineId: "a0L000000000001AAA", quantity: 3 }, "updateQuoteLine", "Ready to update quote line quantity"],
   ] as const)("gates %s and executes it only after confirmation", async (toolName, args, gatewayMethod, title) => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({
       role: "assistant",
       content: "",
       tool_calls: [{ function: { name: toolName, arguments: args } }],
@@ -335,7 +354,7 @@ describe("agent runtime", () => {
     expect(mutationSpy).not.toHaveBeenCalled();
     expect(proposed.pendingConfirmation).toMatchObject({ toolName, args, summary: { title, cancelLabel: "Cancel" } });
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "Done." })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({ role: "assistant", content: "Done." })));
     await runAgentTurn({ kind: "confirm", pending: proposed.pendingConfirmation!, history: [] }, gateway);
 
     expect(mutationSpy).toHaveBeenCalledOnce();
@@ -345,12 +364,12 @@ describe("agent runtime", () => {
   it("uses a known quote number in a mutation confirmation", async () => {
     const quoteId = "a0Q000000000001AAA";
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(ollamaResponse({
+      .mockResolvedValueOnce(chatCompletionResponse({
         role: "assistant",
         content: "",
         tool_calls: [{ function: { name: "get_quote_summary", arguments: { quoteId } } }],
       }))
-      .mockResolvedValueOnce(ollamaResponse({
+      .mockResolvedValueOnce(chatCompletionResponse({
         role: "assistant",
         content: "",
         tool_calls: [{
@@ -374,12 +393,12 @@ describe("agent runtime", () => {
   it("uses a known product name in a mutation confirmation", async () => {
     const productId = "01t000000000002AAA";
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(ollamaResponse({
+      .mockResolvedValueOnce(chatCompletionResponse({
         role: "assistant",
         content: "",
         tool_calls: [{ function: { name: "search_products", arguments: { query: "Cloud Pro" } } }],
       }))
-      .mockResolvedValueOnce(ollamaResponse({
+      .mockResolvedValueOnce(chatCompletionResponse({
         role: "assistant",
         content: "",
         tool_calls: [{
@@ -402,7 +421,7 @@ describe("agent runtime", () => {
 
   it("marks only approval-band discount confirmations as requiring an approver name", async () => {
     const pendingFor = async (toolName: string, args: Record<string, unknown>) => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({
         role: "assistant",
         content: "",
         tool_calls: [{ function: { name: toolName, arguments: args } }],
@@ -422,7 +441,7 @@ describe("agent runtime", () => {
       summary: { title: "Ready", lines: [], confirmLabel: "Confirm", cancelLabel: "Cancel", requiresApproverName: true },
     };
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "Done." })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({ role: "assistant", content: "Done." })));
     const blockedGateway = new MockRevenueGateway();
     const blockedSpy = vi.spyOn(blockedGateway, "applyDiscount");
     const idHistory = [{ role: "user" as const, content: "Use quote a0Q000000000001AAA and line a0L000000000001AAA" }];
@@ -430,7 +449,7 @@ describe("agent runtime", () => {
     expect(blockedSpy).not.toHaveBeenCalled();
     expect(blocked.message).toContain("manager's name is required");
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({ role: "assistant", content: "Done." })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({ role: "assistant", content: "Done." })));
     const approvedGateway = new MockRevenueGateway();
     const approvedSpy = vi.spyOn(approvedGateway, "applyDiscount");
     const approved = await runAgentTurn({ kind: "confirm", pending, history: idHistory, approverName: "Morgan Lee" }, approvedGateway);
@@ -440,7 +459,7 @@ describe("agent runtime", () => {
 
   it("gates a second mutation proposed after a confirmed mutation", async () => {
     const nextQuoteId = "a0Q-follow-up";
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({
       role: "assistant",
       content: "",
       tool_calls: [{
@@ -471,7 +490,7 @@ describe("agent runtime", () => {
   });
 
   it("returns a completed confirmed mutation when no follow-up tool is needed", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ollamaResponse({
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({
       role: "assistant",
       content: "No further action is needed.",
     })));
@@ -502,4 +521,29 @@ describe("agent runtime", () => {
     expect(mutationSpy).not.toHaveBeenCalled();
     expect(result).toEqual({ message: "No changes made.", trace: [], pendingConfirmation: null });
   });
+
+  it("fails clearly at call time when LLM_API_KEY is missing", async () => {
+    delete process.env.LLM_API_KEY;
+    await expect(runAgentTurn(
+      { kind: "message", text: "help", history: [] },
+      new MockRevenueGateway()
+    )).rejects.toThrow("LLM_API_KEY is required");
+  });
+
+  it("fails clearly when tool arguments are malformed", async () => {
+    const response = new Response(JSON.stringify({
+      choices: [{ message: { role: "assistant", content: null, tool_calls: [{
+        id: "call-malformed",
+        type: "function",
+        function: { name: "find_account", arguments: "{not-json" },
+      }] } }],
+    }), { status: 200, headers: { "content-type": "application/json" } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+    await expect(runAgentTurn(
+      { kind: "message", text: "Find Acme", history: [] },
+      new MockRevenueGateway()
+    )).rejects.toThrow("malformed JSON arguments for tool find_account");
+  });
 });
+

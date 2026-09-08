@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import { ConfirmationCard } from "./ConfirmationCard";
 import { ToolTracePanel } from "./ToolTracePanel";
 import { ModeToggle, type Mode } from "./ModeToggle";
@@ -237,7 +238,18 @@ export function ChatApp() {
                   className={`cc-chat-bubble cc-chat-bubble--${message.role === "user" ? "user" : "agent"}`}
                 >
                   <span className="cc-sr-only">{message.role === "user" ? "You said: " : "Agent said: "}</span>
-                  {message.text}
+                  {message.role === "agent" ? (
+                    <div className="cc-chat-markdown">
+                      <ReactMarkdown
+                        allowedElements={["p", "strong", "em", "ul", "ol", "li", "code", "br"]}
+                        unwrapDisallowed
+                      >
+                        {message.text}
+                      </ReactMarkdown>
+                    </div>
+                  ) : (
+                    message.text
+                  )}
                 </div>
               ))}
               {isLoading && (

@@ -15,6 +15,31 @@ afterEach(() => {
 });
 
 describe("ChatApp", () => {
+  it("renders Markdown for agent messages but keeps user messages literal", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          message: "The agent rendered **bold text**.",
+          trace: [],
+          pendingConfirmation: null,
+        })
+      )
+    );
+
+    render(<ChatApp />);
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "User typed **text**" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    const userText = screen.getByText("User typed **text**");
+    expect(userText.querySelector("strong")).toBeNull();
+
+    const agentText = await screen.findByText("bold text");
+    expect(agentText.tagName).toBe("STRONG");
+    expect(agentText.closest(".cc-chat-bubble")?.textContent).not.toContain("**bold text**");
+  });
+
   it("shows a confirmation card as its own element once the backend proposes a mutation", async () => {
     vi.stubGlobal(
       "fetch",

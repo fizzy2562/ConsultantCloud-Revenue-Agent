@@ -1,19 +1,9 @@
-import { setDefaultResultOrder } from "node:dns";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createServer } from "@consultantcloud/revenue-mcp";
 import type { RevenueGateway } from "@consultantcloud/shared";
 import { evaluateDiscount } from "@consultantcloud/policy";
-
-// Some serverless runtimes resolve dual-stack hostnames to an IPv6 address
-// they cannot actually route to, surfacing as a plain DNS ENOTFOUND rather
-// than a connection error. Prefer IPv4 to avoid that class of failure.
-try {
-  setDefaultResultOrder("ipv4first");
-} catch {
-  // Not available in this runtime; fall back to platform default.
-}
 
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 
@@ -46,7 +36,8 @@ export type RunAgentTurnInput = (
   | { kind: "cancel"; pending: PendingConfirmation; history: ChatTurn[] }) & { mode?: AgentMode };
 
 export interface AgentRuntimeOptions {
-  ollamaUrl?: string;
+  apiKey?: string;
+  apiUrl?: string;
   model?: string;
   runId?: string;
 }
@@ -58,17 +49,17 @@ type ToolEnvelope = {
   meta: { requestId: string; durationMs: number; source: "salesforce" | "policy" | "mock" };
 };
 
-type OllamaToolCall = { function: { name: string; arguments?: Record<string, unknown> } };
-type OllamaMessage = {
+type ChatToolCall = { id?: string; type?: "function"; function: { name: string; arguments: string } };
+type ChatMessage = {
   role: "system" | "user" | "assistant" | "tool";
-  content: string;
-  tool_name?: string;
-  tool_calls?: OllamaToolCall[];
+  content: string | null;
+  tool_call_id?: string;
+  tool_calls?: ChatToolCall[];
 };
 
 export const AGENT_RUNTIME_DEFAULTS = {
-  ollamaUrl: "http://127.0.0.1:11434",
-  model: "qwen3.8:27b",
+  apiUrl: "https://openrouter.ai/api/v1/chat/completions",
+  model: "liquid/lfm-2.5-2.6b:free",
   toolLoopLimit: 4,
   confirmationRequired: true,
 } as const;
@@ -83,8 +74,17 @@ const MUTATION_TOOLS = new Set([
   "apply_discount",
 ]);
 const CATALOG_MUTATION_TOOLS = new Set(["create_product", "update_product", "set_product_price", "add_bundle_component", "remove_bundle_component", "update_bundle_component"]);
-const USER_TOOLS = new Set(["find_account", "get_account_revenue_context", "search_products", "get_account_assets", "get_quote_summary", ...MUTATION_TOOLS]);
-const ARCHITECT_TOOLS = new Set(["find_account", "get_account_revenue_context", "search_products", "get_account_assets", "get_quote_summary", "get_bundle_structure", ...CATALOG_MUTATION_TOOLS]);
+const GENERATED_READ_TOOLS = [
+  "explain_quote_line_price", "get_amendment_delta", "get_billing_summary", "get_bundle_pricing_rules",
+  "get_cancellation_eligibility", "get_context_definition", "get_contract_obligations", "get_contract_pricing",
+  "get_contract_status", "get_derived_pricing_source", "get_expression_set", "get_fulfillment_exceptions",
+  "get_fulfillment_plan", "get_price_adjustment_schedule", "get_pricing_procedure", "get_product_attributes",
+  "get_product_configuration", "get_product_selling_models", "get_qualification_rules", "get_quote_line_detail",
+  "get_rate_card", "get_renewal_terms", "get_revenue_order_status", "get_subscription_pricing_detail",
+  "list_catalog_categories", "list_decision_tables",
+];
+const USER_TOOLS = new Set(["find_account", "get_account_revenue_context", "search_products", "get_account_assets", "get_quote_summary", ...MUTATION_TOOLS, ...GENERATED_READ_TOOLS]);
+const ARCHITECT_TOOLS = new Set(["find_account", "get_account_revenue_context", "search_products", "get_account_assets", "get_quote_summary", "get_bundle_structure", ...CATALOG_MUTATION_TOOLS, ...GENERATED_READ_TOOLS]);
 
 const SYSTEM_PROMPT = `You are a commercial assistant for Salesforce Revenue Management requests involving quotes, renewals, amendments, quote line items, and discounts.
 Use the available tools to retrieve facts and perform requested work. Always resolve an account by name with find_account before calling any tool that needs an accountId. Use get_account_revenue_context and get_account_assets for account context, search_products to resolve products, and get_quote_summary to inspect a quote.
@@ -224,11 +224,11 @@ export async function runAgentTurn(
   const mode = input.mode ?? "user";
   const allowedTools = mode === "architect" ? ARCHITECT_TOOLS : USER_TOOLS;
   const modeMutations = mode === "architect" ? CATALOG_MUTATION_TOOLS : MUTATION_TOOLS;
-  const ollamaTools = tools.filter((tool) => allowedTools.has(tool.name)).map((tool) => ({
+  const chatTools = tools.filter((tool) => allowedTools.has(tool.name)).map((tool) => ({
     type: "function",
     function: { name: tool.name, description: tool.description, parameters: tool.inputSchema },
   }));
-  const messages: OllamaMessage[] = [{ role: "system", content: mode === "architect" ? ARCHITECT_SYSTEM_PROMPT : SYSTEM_PROMPT }, ...input.history];
+  const messages: ChatMessage[] = [{ role: "system", content: mode === "architect" ? ARCHITECT_SYSTEM_PROMPT : SYSTEM_PROMPT }, ...input.history];
   const trace: AgentTraceEntry[] = [];
   const accountNames = new Map<string, string>();
   const quoteNumbers = new Map<string, string>();
@@ -302,12 +302,13 @@ export async function runAgentTurn(
     trace.push({ tool: input.pending.toolName, badge: "WRITE", durationMs, blocked, summary: resultSummary(input.pending.toolName, result) });
     rememberResult(result);
     confirmedMessage = resultMessage(input.pending.toolName, result);
+    const confirmedToolCallId = `confirmed-${crypto.randomUUID()}`;
     messages.push({
       role: "assistant",
       content: "",
-      tool_calls: [{ function: { name: input.pending.toolName, arguments: args } }],
+      tool_calls: [{ id: confirmedToolCallId, type: "function", function: { name: input.pending.toolName, arguments: JSON.stringify(args) } }],
     });
-    messages.push({ role: "tool", tool_name: input.pending.toolName, content: JSON.stringify(result) });
+    messages.push({ role: "tool", tool_call_id: confirmedToolCallId, content: JSON.stringify(result) });
   }
 
   const combinedMessage = (continuation: string) => {
@@ -316,20 +317,32 @@ export async function runAgentTurn(
   };
 
   for (let iteration = 0; iteration < AGENT_RUNTIME_DEFAULTS.toolLoopLimit; iteration += 1) {
-    const baseUrl = (options.ollamaUrl ?? AGENT_RUNTIME_DEFAULTS.ollamaUrl).replace(/\/+$/, "");
-    const response = await fetch(`${baseUrl}/api/chat`, {
+    const apiKey = options.apiKey ?? process.env.LLM_API_KEY;
+    if (!apiKey) throw new Error("LLM_API_KEY is required to call the configured chat completions API");
+    const response = await fetch(options.apiUrl ?? AGENT_RUNTIME_DEFAULTS.apiUrl, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: options.model ?? AGENT_RUNTIME_DEFAULTS.model, stream: false, think: false, messages, tools: ollamaTools }),
+      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model: options.model ?? AGENT_RUNTIME_DEFAULTS.model, messages, tools: chatTools, tool_choice: "auto", stream: false, max_tokens: 2048 }),
     });
-    if (!response.ok) throw new Error(`Ollama ${response.status}: ${(await response.text()).slice(0, 300)}`);
-    const body = await response.json() as { message?: OllamaMessage };
-    const assistant = body.message;
-    if (!assistant) throw new Error("Ollama response did not contain a message");
+    if (!response.ok) throw new Error(`LLM API ${response.status}: ${(await response.text()).slice(0, 300)}`);
+    const body = await response.json() as { choices?: Array<{ message?: ChatMessage }> };
+    const assistant = body.choices?.[0]?.message;
+    if (!assistant) throw new Error("LLM API response did not contain choices[0].message");
     latestText = assistant.content ?? latestText;
     messages.push(assistant);
-    const calls = assistant.tool_calls ?? [];
-    if (calls.length === 0) return { message: combinedMessage(assistant.content), trace, pendingConfirmation: null };
+    const calls = (assistant.tool_calls ?? []).map((call) => {
+      let args: unknown;
+      try {
+        args = JSON.parse(call.function.arguments);
+      } catch (error) {
+        throw new Error(`LLM API returned malformed JSON arguments for tool ${call.function.name}: ${(error as Error).message}`);
+      }
+      if (!args || typeof args !== "object" || Array.isArray(args)) {
+        throw new Error(`LLM API returned non-object arguments for tool ${call.function.name}`);
+      }
+      return { ...call, function: { ...call.function, arguments: args as Record<string, unknown> } };
+    });
+    if (calls.length === 0) return { message: combinedMessage(assistant.content ?? ""), trace, pendingConfirmation: null };
     const unavailable = calls.find((call) => !allowedTools.has(call.function.name));
     if (unavailable) throw new Error(`Tool ${unavailable.function.name} is not available in ${mode} mode`);
 
@@ -368,7 +381,8 @@ export async function runAgentTurn(
         }
       }
       rememberResult(result);
-      messages.push({ role: "tool", tool_name: call.function.name, content: JSON.stringify(result) });
+      if (!call.id) throw new Error(`LLM API tool call ${call.function.name} did not contain an id`);
+      messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
     }
   }
 

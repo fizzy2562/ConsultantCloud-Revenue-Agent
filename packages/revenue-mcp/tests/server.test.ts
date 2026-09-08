@@ -3,6 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createServer } from "../src/server.js";
+import { toolCatalog } from "../src/toolCatalog.js";
 import { MockRevenueGateway } from "@consultantcloud/shared";
 
 type TextToolResult = { content: Array<{ type: string; text: string }> };
@@ -24,24 +25,7 @@ describe("Revenue MCP server", () => {
     const client = await connectedClient();
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
-    expect(names).toEqual(
-      [
-        "find_account",
-        "get_account_assets",
-        "get_account_revenue_context",
-        "get_quote_summary",
-        "search_products",
-        "create_initial_quote",
-        "create_renewal_quote",
-        "create_amendment_quote",
-        "add_quote_line",
-        "remove_quote_line",
-        "update_quote_line",
-        "apply_discount",
-        "create_product", "update_product", "set_product_price", "get_bundle_structure",
-        "add_bundle_component", "remove_bundle_component", "update_bundle_component",
-      ].sort()
-    );
+    expect(names).toEqual(toolCatalog.map((tool) => tool.name).sort());
   });
 
   it("find_account returns Acme University for a partial name match", async () => {

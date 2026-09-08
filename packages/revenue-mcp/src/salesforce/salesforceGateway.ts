@@ -80,6 +80,11 @@ export class SalesforceRevenueGateway implements RevenueGateway {
 
   constructor(private readonly conn: Connection) {}
 
+  /** Read-only tool implementations use the authenticated connection for SOQL. */
+  get readConnection(): Connection {
+    return this.conn;
+  }
+
   private async resolveStandardPricebookId(): Promise<string | null> {
     if (this.standardPricebookId !== undefined) return this.standardPricebookId;
     const result = await this.conn.query<{ Id: string }>("SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1");
@@ -427,7 +432,7 @@ export class SalesforceRevenueGateway implements RevenueGateway {
           meta: meta(),
         };
       }
-      const assetIds = (assetsResult.data ?? []).map((a) => a.id);
+      const assetIds = (assetsResult.data ?? []).map((a: AccountAsset) => a.id);
       if (assetIds.length === 0) {
         return {
           ok: false,
@@ -503,7 +508,7 @@ export class SalesforceRevenueGateway implements RevenueGateway {
           meta: meta(),
         };
       }
-      const assetIds = (assetsResult.data ?? []).map((a) => a.id);
+      const assetIds = (assetsResult.data ?? []).map((a: AccountAsset) => a.id);
       if (assetIds.length === 0) {
         return {
           ok: false,

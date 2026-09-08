@@ -6,3 +6,4 @@ dist/
 *.jsonl
 .DS_Store
 .vercel
+.claude/

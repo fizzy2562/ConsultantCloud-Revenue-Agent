@@ -8,7 +8,7 @@ type ArchitectureSnapshot = {
   application: { name: string; apiRoutes: string[] };
   agentRuntime: {
     model: string;
-    ollamaHost: string;
+    apiHost: string;
     toolLoopLimit: number;
     confirmationRequired: boolean;
   };
@@ -277,7 +277,7 @@ export function ArchitectDashboard() {
           <div className="cc-architecture-card" style={CARD_STYLE}>
             <div style={SECTION_HEADING_STYLE}>Agent Runtime</div>
             <FieldRow label="Model" value={agentRuntime.model} />
-            <FieldRow label="Ollama host" value={agentRuntime.ollamaHost} />
+            <FieldRow label="Model provider host" value={agentRuntime.apiHost} />
             <FieldRow label="Tool loop limit" value={String(agentRuntime.toolLoopLimit)} />
             <FieldRow
               label="Confirmation required"

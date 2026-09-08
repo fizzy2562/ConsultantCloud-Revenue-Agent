@@ -566,6 +566,39 @@ select:disabled {
   border-bottom-left-radius: 4px;
 }
 
+.cc-chat-markdown {
+  white-space: normal;
+}
+
+.cc-chat-markdown p,
+.cc-chat-markdown ul,
+.cc-chat-markdown ol {
+  margin: 0 0 0.5rem;
+}
+
+.cc-chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.cc-chat-markdown ul,
+.cc-chat-markdown ol {
+  padding-left: 1.25rem;
+}
+
+.cc-chat-markdown strong {
+  color: inherit;
+  font-weight: 700;
+}
+
+.cc-chat-markdown code {
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.875em;
+  background-color: #e5e7eb;
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+}
+
 /* ---------- Architecture Dashboard ---------- */
 .cc-architecture,
 .cc-architecture__inner,

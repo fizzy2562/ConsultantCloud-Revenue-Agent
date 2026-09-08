@@ -29,7 +29,7 @@ export function createServer(gateway: RevenueGateway, options?: { runId?: string
 }
 
 async function main() {
-  const gateway = new MockRevenueGateway();
+  const gateway = createRevenueGateway();
   const server = createServer(gateway);
   const transport = new StdioServerTransport();
   await server.connect(transport);

@@ -21,6 +21,7 @@ import {
 import { protectedMutationActions } from "@consultantcloud/policy";
 import type { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
+import { generatedToolDefinitions } from "./tools/generated/registry";
 
 export type ToolKind = "read" | "write";
 
@@ -52,6 +53,7 @@ export const toolDefinitions = {
   add_bundle_component: { title: "Add Bundle Component", description: "Adds a child product as a component of a bundle product. Architect-mode only. This mutates Salesforce (or the mock) state, requires explicit user confirmation, and is idempotent by idempotencyKey.", kind: "write", input: AddBundleComponentInputSchema, successShape: "Created component id, parent product id, and child product id." },
   remove_bundle_component: { title: "Remove Bundle Component", description: "Removes a component record from a bundle. Architect-mode only. This mutates Salesforce (or the mock) state, requires explicit user confirmation, and is idempotent by idempotencyKey.", kind: "write", input: RemoveBundleComponentInputSchema, successShape: "Removed component id and removed=true." },
   update_bundle_component: { title: "Update Bundle Component", description: "Updates quantity, min/max, required, or grouping fields on an existing bundle component record. Architect-mode only. This mutates Salesforce (or the mock) state, requires explicit user confirmation, and is idempotent by idempotencyKey.", kind: "write", input: UpdateBundleComponentInputSchema, successShape: "Updated component id, parent product id, and child product id." },
+  ...generatedToolDefinitions,
 } as const satisfies Record<string, ToolDefinition>;
 
 export type ToolName = keyof typeof toolDefinitions;

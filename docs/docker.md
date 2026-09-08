@@ -6,21 +6,23 @@ Build the production image from the repository root so Docker can access every p
 docker build -t consultantcloud-revenue-agent .
 ```
 
-Run the web app on port 3000, supplying the tools bridge key and an Ollama endpoint reachable from the container:
+Run the web app on port 3000, supplying the tools bridge key and LLM API key:
 
 ```sh
 docker run -p 3000:3000 \
   -e TOOLS_API_KEY=replace-with-a-secret \
-  -e OLLAMA_URL=http://host.docker.internal:11434 \
+  -e LLM_API_KEY=<LLM_API_KEY> \
   consultantcloud-revenue-agent
 ```
 
 ## Environment variables
 
 - `TOOLS_API_KEY` is required for the `/api/tools` bridge to accept requests. The bridge fails closed when it is absent. See [Agentforce setup](./agentforce-setup.md) for configuration details.
-- `OLLAMA_URL` selects the Ollama endpoint used by live agent chat. It defaults to `http://127.0.0.1:11434`, which cannot reach an Ollama process on the Docker host. Use `http://host.docker.internal:11434` for a typical host-machine Ollama installation, or provide a reachable remote endpoint.
+- `LLM_API_KEY` is required for live agent chat and is sent only as the bearer token to the configured chat completions API.
+- `LLM_API_URL` optionally overrides the default OpenRouter endpoint, `https://openrouter.ai/api/v1/chat/completions`.
+- `LLM_MODEL` optionally overrides the default model, `liquid/lfm-2.5-2.6b:free`.
 - `SF_INSTANCE_URL` and `SF_ACCESS_TOKEN` are optional. Setting both switches the app from the seeded mock gateway to real Salesforce.
 
 `host.docker.internal` works out of the box with Docker Desktop on macOS and Windows. On Linux, add `--add-host=host.docker.internal:host-gateway` to `docker run`.
 
-Without a reachable Ollama instance, the chat UI's agent reasoning fails. The REST tools bridge under `/api/tools` and the trace-download endpoint do not use Ollama and continue to work independently.
+Without `LLM_API_KEY`, the chat UI's agent reasoning fails with a runtime configuration error. The REST tools bridge under `/api/tools` and the trace-download endpoint do not use the hosted LLM and continue to work independently.

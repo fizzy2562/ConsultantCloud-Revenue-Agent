@@ -26,7 +26,9 @@ export async function POST(request: Request) {
   try {
     const result = await runAgentTurn({ ...(input as unknown as RunAgentTurnInput), mode: input.mode === "architect" ? "architect" : "user" }, gateway, {
       runId: input.conversationId,
-      ...(process.env.OLLAMA_URL ? { ollamaUrl: process.env.OLLAMA_URL } : {}),
+      ...(process.env.LLM_API_KEY ? { apiKey: process.env.LLM_API_KEY } : {}),
+      ...(process.env.LLM_API_URL ? { apiUrl: process.env.LLM_API_URL } : {}),
+      ...(process.env.LLM_MODEL ? { model: process.env.LLM_MODEL } : {}),
     });
     return Response.json(result);
   } catch (err) {

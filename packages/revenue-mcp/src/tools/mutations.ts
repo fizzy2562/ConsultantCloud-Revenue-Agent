@@ -26,7 +26,7 @@ function idempotencyConflictResult(err: IdempotencyConflictError) {
 }
 
 export function registerCreateInitialQuote(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
-  server.registerTool("create_initial_quote", toolRegistration("create_initial_quote"), async (args) => {
+  server.registerTool("create_initial_quote", toolRegistration("create_initial_quote"), async (args: any) => {
     try {
       const confirmation = requireConfirmation("create_initial_quote", { confirmedByUser: args.confirmedByUser });
       const rawResult = !confirmation.satisfied ? { ok: false, error: { code: "CONFIRMATION_REQUIRED", message: confirmation.reason ?? "Confirmation required", retryable: false }, meta: { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" as const } } : await withIdempotency(store, args.idempotencyKey, JSON.stringify(args), () => gateway.createInitialQuote(args), (result) => (result as { ok: boolean }).ok === true);
@@ -42,7 +42,7 @@ export function registerCreateInitialQuote(server: McpServer, gateway: RevenueGa
 }
 
 export function registerCreateRenewalQuote(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
-  server.registerTool("create_renewal_quote", toolRegistration("create_renewal_quote"), async (args) => {
+  server.registerTool("create_renewal_quote", toolRegistration("create_renewal_quote"), async (args: any) => {
     try {
       const confirmation = requireConfirmation("create_renewal_quote", { confirmedByUser: args.confirmedByUser });
       const rawResult = !confirmation.satisfied ? { ok: false, error: { code: "CONFIRMATION_REQUIRED", message: confirmation.reason ?? "Confirmation required", retryable: false }, meta: { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" as const } } : await withIdempotency(store, args.idempotencyKey, JSON.stringify(args), () => gateway.createRenewalQuote(args), (result) => (result as { ok: boolean }).ok === true);
@@ -58,7 +58,7 @@ export function registerCreateRenewalQuote(server: McpServer, gateway: RevenueGa
 }
 
 export function registerCreateAmendmentQuote(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
-  server.registerTool("create_amendment_quote", toolRegistration("create_amendment_quote"), async (args) => {
+  server.registerTool("create_amendment_quote", toolRegistration("create_amendment_quote"), async (args: any) => {
     try {
       const confirmation = requireConfirmation("create_amendment_quote", { confirmedByUser: args.confirmedByUser });
       const rawResult = !confirmation.satisfied ? { ok: false, error: { code: "CONFIRMATION_REQUIRED", message: confirmation.reason ?? "Confirmation required", retryable: false }, meta: { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" as const } } : await withIdempotency(store, args.idempotencyKey, JSON.stringify(args), () => gateway.createAmendmentQuote(args), (result) => (result as { ok: boolean }).ok === true);
@@ -74,7 +74,7 @@ export function registerCreateAmendmentQuote(server: McpServer, gateway: Revenue
 }
 
 export function registerAddQuoteLine(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
-  server.registerTool("add_quote_line", toolRegistration("add_quote_line"), async (args) => {
+  server.registerTool("add_quote_line", toolRegistration("add_quote_line"), async (args: any) => {
     try {
       const confirmation = requireConfirmation("add_quote_line", { confirmedByUser: args.confirmedByUser });
       const rawResult = !confirmation.satisfied ? { ok: false, error: { code: "CONFIRMATION_REQUIRED", message: confirmation.reason ?? "Confirmation required", retryable: false }, meta: { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" as const } } : await withIdempotency(store, args.idempotencyKey, JSON.stringify(args), () => gateway.addQuoteLine(args), (result) => (result as { ok: boolean }).ok === true);
@@ -90,7 +90,7 @@ export function registerAddQuoteLine(server: McpServer, gateway: RevenueGateway,
 }
 
 export function registerRemoveQuoteLine(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
-  server.registerTool("remove_quote_line", toolRegistration("remove_quote_line"), async (args) => {
+  server.registerTool("remove_quote_line", toolRegistration("remove_quote_line"), async (args: any) => {
     try {
       const confirmation = requireConfirmation("remove_quote_line", { confirmedByUser: args.confirmedByUser });
       const rawResult = !confirmation.satisfied ? { ok: false, error: { code: "CONFIRMATION_REQUIRED", message: confirmation.reason ?? "Confirmation required", retryable: false }, meta: { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" as const } } : await withIdempotency(store, args.idempotencyKey, JSON.stringify(args), () => gateway.removeQuoteLine(args), (result) => (result as { ok: boolean }).ok === true);
@@ -104,7 +104,7 @@ export function registerRemoveQuoteLine(server: McpServer, gateway: RevenueGatew
 }
 
 export function registerUpdateQuoteLine(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
-  server.registerTool("update_quote_line", toolRegistration("update_quote_line"), async (args) => {
+  server.registerTool("update_quote_line", toolRegistration("update_quote_line"), async (args: any) => {
     try {
       const confirmation = requireConfirmation("update_quote_line", { confirmedByUser: args.confirmedByUser });
       const rawResult = !confirmation.satisfied ? { ok: false, error: { code: "CONFIRMATION_REQUIRED", message: confirmation.reason ?? "Confirmation required", retryable: false }, meta: { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" as const } } : await withIdempotency(store, args.idempotencyKey, JSON.stringify(args), () => gateway.updateQuoteLine(args), (result) => (result as { ok: boolean }).ok === true);
@@ -118,7 +118,7 @@ export function registerUpdateQuoteLine(server: McpServer, gateway: RevenueGatew
 }
 
 export function registerApplyDiscount(server: McpServer, gateway: RevenueGateway, logger: EventLogger, store: IdempotencyStore<unknown>, runId?: string): void {
-  server.registerTool("apply_discount", toolRegistration("apply_discount"), async (args) => {
+  server.registerTool("apply_discount", toolRegistration("apply_discount"), async (args: any) => {
     try {
       const evaluation = evaluateDiscount(args.discountPercent);
       let rawResult: unknown;

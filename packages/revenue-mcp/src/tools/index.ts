@@ -4,6 +4,8 @@ import type { ToolCallEvent } from "@consultantcloud/shared";
 import { z, type ZodTypeAny } from "zod";
 import { logToolCallEvent } from "@consultantcloud/telemetry";
 import { toolRegistration } from "../toolCatalog";
+import type { Connection } from "jsforce";
+import { generatedReadTools } from "./generated/registry";
 
 export { registerCatalogTools } from "./catalog";
 
@@ -24,7 +26,7 @@ function respond(logger: EventLogger, toolName: string, result: ResultLike, runI
 }
 
 export function registerFindAccount(server: McpServer, gateway: RevenueGateway, logger: EventLogger, runId?: string): void {
-  server.registerTool("find_account", toolRegistration("find_account"), async (args) => {
+  server.registerTool("find_account", toolRegistration("find_account"), async (args: any) => {
     try {
       return respond(logger, "find_account", validateResult(FindAccountOutputSchema, await gateway.findAccount(args)), runId);
     } catch (err) {
@@ -35,7 +37,7 @@ export function registerFindAccount(server: McpServer, gateway: RevenueGateway, 
 }
 
 export function registerGetAccountRevenueContext(server: McpServer, gateway: RevenueGateway, logger: EventLogger, runId?: string): void {
-  server.registerTool("get_account_revenue_context", toolRegistration("get_account_revenue_context"), async (args) => {
+  server.registerTool("get_account_revenue_context", toolRegistration("get_account_revenue_context"), async (args: any) => {
     try {
       const accountResult = await gateway.getAccountById!(args);
       if (!accountResult.ok) {
@@ -55,7 +57,7 @@ export function registerGetAccountRevenueContext(server: McpServer, gateway: Rev
 }
 
 export function registerSearchProducts(server: McpServer, gateway: RevenueGateway, logger: EventLogger, runId?: string): void {
-  server.registerTool("search_products", toolRegistration("search_products"), async (args) => {
+  server.registerTool("search_products", toolRegistration("search_products"), async (args: any) => {
     try {
       return respond(logger, "search_products", validateResult(ProductSearchOutputSchema, await gateway.searchProducts(args)), runId);
     } catch (err) {
@@ -66,7 +68,7 @@ export function registerSearchProducts(server: McpServer, gateway: RevenueGatewa
 }
 
 export function registerGetAccountAssets(server: McpServer, gateway: RevenueGateway, logger: EventLogger, runId?: string): void {
-  server.registerTool("get_account_assets", toolRegistration("get_account_assets"), async (args) => {
+  server.registerTool("get_account_assets", toolRegistration("get_account_assets"), async (args: any) => {
     try {
       return respond(logger, "get_account_assets", validateResult(AccountAssetsOutputSchema, await gateway.getAccountAssets(args)), runId);
     } catch (err) {
@@ -77,7 +79,7 @@ export function registerGetAccountAssets(server: McpServer, gateway: RevenueGate
 }
 
 export function registerGetQuoteSummary(server: McpServer, gateway: RevenueGateway, logger: EventLogger, runId?: string): void {
-  server.registerTool("get_quote_summary", toolRegistration("get_quote_summary"), async (args) => {
+  server.registerTool("get_quote_summary", toolRegistration("get_quote_summary"), async (args: any) => {
     try {
       return respond(logger, "get_quote_summary", validateResult(QuoteSummarySchema, await gateway.getQuoteSummary(args)), runId);
     } catch (err) {
@@ -93,4 +95,13 @@ export function registerReadTools(server: McpServer, gateway: RevenueGateway, lo
   registerSearchProducts(server, gateway, logger, runId);
   registerGetAccountAssets(server, gateway, logger, runId);
   registerGetQuoteSummary(server, gateway, logger, runId);
+  const connection = (gateway as RevenueGateway & { readConnection?: Connection }).readConnection;
+  for (const { tool, handler, input } of generatedReadTools) {
+    server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: input.shape }, async (args: any) => {
+      const result: ResultLike = connection
+        ? await handler(connection, args) as ResultLike
+        : { ok: false, error: { code: "LIVE_SALESFORCE_REQUIRED", message: `${tool.name} requires a live Salesforce connection`, retryable: false }, meta: { requestId: crypto.randomUUID(), durationMs: 0, source: "policy" } };
+      return respond(logger, tool.name, result, runId);
+    });
+  }
 }
