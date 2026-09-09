@@ -26,8 +26,15 @@ import { getRevenueOrderStatusTool, getRevenueOrderStatusHandler } from "./get_r
 import { getSubscriptionPricingDetailTool, getSubscriptionPricingDetailHandler } from "./get_subscription_pricing_detail";
 import { listCatalogCategoriesTool, listCatalogCategoriesHandler } from "./list_catalog_categories";
 import { listDecisionTablesTool, listDecisionTablesHandler } from "./list_decision_tables";
+import { invokeDecisionTableTool, invokeDecisionTableHandler } from "./invoke_decision_table";
 
-type JsonProperty = { type: string; description?: string };
+type JsonProperty = {
+  type?: string;
+  description?: string;
+  properties?: Record<string, JsonProperty>;
+  required?: string[];
+  items?: JsonProperty;
+};
 type DraftTool = { name: string; title: string; description: string; kind: "read"; inputSchema: { properties: Record<string, JsonProperty>; required: string[] } };
 type DraftHandler = (connection: Connection, input: any) => Promise<any>;
 
@@ -46,14 +53,38 @@ const pairs: Array<[DraftTool, DraftHandler]> = [
   [getRenewalTermsTool, getRenewalTermsHandler], [getRevenueOrderStatusTool, getRevenueOrderStatusHandler],
   [getSubscriptionPricingDetailTool, getSubscriptionPricingDetailHandler], [listCatalogCategoriesTool, listCatalogCategoriesHandler],
   [listDecisionTablesTool, listDecisionTablesHandler],
+  [invokeDecisionTableTool, invokeDecisionTableHandler],
 ];
+
+function propertySchema(property: JsonProperty): z.ZodTypeAny {
+  let schema: z.ZodTypeAny;
+  if (property.type === "array" && property.items) {
+    schema = z.array(propertySchema(property.items));
+  } else if (property.type === "object" && property.properties) {
+    const required = new Set(property.required ?? []);
+    const shape: Record<string, z.ZodTypeAny> = {};
+    for (const [name, child] of Object.entries(property.properties)) {
+      const childSchema = propertySchema(child);
+      shape[name] = required.has(name) ? childSchema : childSchema.optional();
+    }
+    schema = z.object(shape).strict();
+  } else if (property.type === "number") {
+    schema = z.number();
+  } else if (property.type === "boolean") {
+    schema = z.boolean();
+  } else if (property.type === "string") {
+    schema = z.string();
+  } else {
+    schema = z.unknown();
+  }
+  return property.description ? schema.describe(property.description) : schema;
+}
 
 function inputObject(tool: DraftTool): z.AnyZodObject {
   const required = new Set(tool.inputSchema.required);
   const shape: Record<string, z.ZodTypeAny> = {};
   for (const [name, property] of Object.entries(tool.inputSchema.properties)) {
-    let schema: z.ZodTypeAny = property.type === "number" ? z.number() : property.type === "boolean" ? z.boolean() : z.string();
-    if (property.description) schema = schema.describe(property.description);
+    const schema = propertySchema(property);
     shape[name] = required.has(name) ? schema : schema.optional();
   }
   return z.object(shape).strict();

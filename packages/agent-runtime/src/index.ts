@@ -81,7 +81,7 @@ const GENERATED_READ_TOOLS = [
   "get_fulfillment_plan", "get_price_adjustment_schedule", "get_pricing_procedure", "get_product_attributes",
   "get_product_configuration", "get_product_selling_models", "get_qualification_rules", "get_quote_line_detail",
   "get_rate_card", "get_renewal_terms", "get_revenue_order_status", "get_subscription_pricing_detail",
-  "list_catalog_categories", "list_decision_tables",
+  "list_catalog_categories", "list_decision_tables", "invoke_decision_table",
 ];
 const USER_TOOLS = new Set(["find_account", "get_account_revenue_context", "search_products", "get_account_assets", "get_quote_summary", ...MUTATION_TOOLS, ...GENERATED_READ_TOOLS]);
 const ARCHITECT_TOOLS = new Set(["find_account", "get_account_revenue_context", "search_products", "get_account_assets", "get_quote_summary", "get_bundle_structure", ...CATALOG_MUTATION_TOOLS, ...GENERATED_READ_TOOLS]);
@@ -319,11 +319,28 @@ export async function runAgentTurn(
   for (let iteration = 0; iteration < AGENT_RUNTIME_DEFAULTS.toolLoopLimit; iteration += 1) {
     const apiKey = options.apiKey ?? process.env.LLM_API_KEY;
     if (!apiKey) throw new Error("LLM_API_KEY is required to call the configured chat completions API");
-    const response = await fetch(options.apiUrl ?? AGENT_RUNTIME_DEFAULTS.apiUrl, {
+    const llmRequestInit: RequestInit = {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ model: options.model ?? AGENT_RUNTIME_DEFAULTS.model, messages, tools: chatTools, tool_choice: "auto", stream: false, max_tokens: 2048 }),
-    });
+    };
+    const llmRetryDelaysMs = [1000, 2000];
+    let response: Response | undefined;
+    for (let attempt = 0; ; attempt += 1) {
+      let networkError: unknown;
+      try {
+        response = await fetch(options.apiUrl ?? AGENT_RUNTIME_DEFAULTS.apiUrl, llmRequestInit);
+      } catch (error) {
+        networkError = error;
+      }
+      const transientStatus = response ? [502, 503, 504].includes(response.status) : false;
+      if ((!networkError && !transientStatus) || attempt >= llmRetryDelaysMs.length) {
+        if (networkError) throw networkError;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, llmRetryDelaysMs[attempt]));
+    }
+    if (!response) throw new Error("LLM API request failed with no response");
     if (!response.ok) throw new Error(`LLM API ${response.status}: ${(await response.text()).slice(0, 300)}`);
     const body = await response.json() as { choices?: Array<{ message?: ChatMessage }> };
     const assistant = body.choices?.[0]?.message;

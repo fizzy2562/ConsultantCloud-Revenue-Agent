@@ -2,10 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { ConfirmationCard } from "./ConfirmationCard";
 import { ToolTracePanel } from "./ToolTracePanel";
 import { ModeToggle, type Mode } from "./ModeToggle";
 import { ArchitectDashboard } from "./ArchitectDashboard";
+import { CpqMigrationReportModal } from "./CpqMigrationReportModal";
 
 type ChatTurn = { role: "user" | "assistant"; content: string };
 
@@ -204,6 +206,7 @@ export function ChatApp() {
           <h1>{hero.title}</h1>
           <p>{hero.body}</p>
           <span className="cc-hero-badge">ConsultantCloud Labs · Open Source</span>
+          {mode === "architect" && <CpqMigrationReportModal />}
         </section>
 
         <div className="cc-starter-prompts">
@@ -241,7 +244,8 @@ export function ChatApp() {
                   {message.role === "agent" ? (
                     <div className="cc-chat-markdown">
                       <ReactMarkdown
-                        allowedElements={["p", "strong", "em", "ul", "ol", "li", "code", "br"]}
+                        remarkPlugins={[remarkGfm]}
+                        allowedElements={["p", "strong", "em", "ul", "ol", "li", "code", "br", "table", "thead", "tbody", "tr", "th", "td"]}
                         unwrapDisallowed
                       >
                         {message.text}
