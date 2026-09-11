@@ -83,7 +83,9 @@ export const inspectCatalogStructureTool = {
 export async function inspectCatalogStructureHandler(conn: Connection, input: Record<string, never>): Promise<InspectCatalogStructureResult> {
   try {
     const [productsRes, productOptionsRes, productFeaturesRes, attributeSetsRes, configurationAttributesRes] = await Promise.all([
-      conn.query<any>(`SELECT Id, Name, ProductCode, Family, IsActive FROM Product2 WHERE IsActive = true ORDER BY Name ASC LIMIT 100`),
+      // Verified live: this org has 161 active products, so LIMIT 100 was silently truncating the
+      // catalog by 61 products -- undercounting every downstream "Products: N" figure in the report.
+      conn.query<any>(`SELECT Id, Name, ProductCode, Family, IsActive FROM Product2 WHERE IsActive = true ORDER BY Name ASC LIMIT 2000`),
       conn.query<any>(`SELECT Id, Name, SBQQ__ConfiguredSKU__c, SBQQ__OptionalSKU__c, SBQQ__Feature__c, SBQQ__Type__c, SBQQ__Required__c, SBQQ__MinQuantity__c, SBQQ__MaxQuantity__c FROM SBQQ__ProductOption__c ORDER BY Name ASC LIMIT 200`),
       conn.query<any>(`SELECT Id, Name, SBQQ__ConfiguredSKU__c, SBQQ__MinOptionCount__c, SBQQ__MaxOptionCount__c, SBQQ__OptionSelectionMethod__c FROM SBQQ__ProductFeature__c ORDER BY Name ASC LIMIT 100`),
       conn.query<any>(`SELECT Id, Name FROM SBQQ__AttributeSet__c ORDER BY Name ASC LIMIT 50`),

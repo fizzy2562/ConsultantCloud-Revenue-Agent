@@ -51,10 +51,10 @@ describe("inspectPriceRulesHandler", () => {
 });
 
 describe("inspectCustomScriptsHandler", () => {
-  it("truncates the code preview to 500 characters and reports the full length", async () => {
-    const longCode = "x".repeat(1200);
+  it("returns the full script verbatim when it is well under the defensive cap", async () => {
+    const code = "x".repeat(1200);
     const conn = connectionWithQueries({
-      records: [{ Id: "cs01", Name: "Custom Calculator", SBQQ__Code__c: longCode }],
+      records: [{ Id: "cs01", Name: "Custom Calculator", SBQQ__Code__c: code }],
     });
 
     const result = await inspectCustomScriptsHandler(conn, {});
@@ -64,8 +64,23 @@ describe("inspectCustomScriptsHandler", () => {
     expect(result.data.customScripts).toHaveLength(1);
     const script = result.data.customScripts[0]!;
     expect(script.codeLength).toBe(1200);
-    expect(script.codePreview).toHaveLength(500);
-    expect(script.codePreview).toBe(longCode.slice(0, 500));
+    expect(script.codePreview).toBe(code);
+  });
+
+  it("bounds a pathologically large script at 20000 characters, while still reporting its true length", async () => {
+    const longCode = "x".repeat(25000);
+    const conn = connectionWithQueries({
+      records: [{ Id: "cs02", Name: "Huge Script", SBQQ__Code__c: longCode }],
+    });
+
+    const result = await inspectCustomScriptsHandler(conn, {});
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const script = result.data.customScripts[0]!;
+    expect(script.codeLength).toBe(25000);
+    expect(script.codePreview).toHaveLength(20000);
+    expect(script.codePreview).toBe(longCode.slice(0, 20000));
   });
 });
 

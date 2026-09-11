@@ -17,6 +17,8 @@
     "@consultantcloud/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "jsforce": "^3.10.25",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "next": "^16.3.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

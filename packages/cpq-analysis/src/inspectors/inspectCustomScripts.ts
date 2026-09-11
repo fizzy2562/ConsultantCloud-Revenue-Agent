@@ -30,7 +30,7 @@ export type InspectCustomScriptsResult =
 export const inspectCustomScriptsTool = {
   name: "inspect_custom_scripts",
   title: "Inspect Custom Scripts",
-  description: "Inventories SBQQ CPQ Quote Calculator Plugin (QCP) custom scripts — the object holding arbitrary custom JavaScript pricing logic with no direct Revenue Cloud equivalent. Returns a preview only, not full code. Read-only.",
+  description: "Inventories SBQQ CPQ Quote Calculator Plugin (QCP) custom scripts — the object holding arbitrary custom JavaScript pricing logic with no direct Revenue Cloud equivalent. Returns the full script source (bounded defensively), for manual developer review — no automated interpretation of the code is attempted. Read-only.",
   kind: "read" as const,
   inputSchema: {
     type: "object",
@@ -47,7 +47,10 @@ export async function inspectCustomScriptsHandler(conn: Connection, input: Recor
       id: r.Id,
       name: r.Name,
       codeLength: (r.SBQQ__Code__c ?? "").length,
-      codePreview: (r.SBQQ__Code__c ?? "").slice(0, 500),
+      // No automated interpretation of this code is attempted anywhere downstream -- it is
+      // displayed verbatim for manual developer review. Bounded defensively against a
+      // pathologically large script, not as a meaningful "preview" truncation.
+      codePreview: (r.SBQQ__Code__c ?? "").slice(0, 20000),
     }));
 
     const data: InspectCustomScriptsData = { customScripts };
