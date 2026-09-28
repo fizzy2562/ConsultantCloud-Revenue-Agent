@@ -223,7 +223,7 @@ subagent revenue_quotes_and_renewals:
         #   RemoveQuoteLineInput / UpdateQuoteLineInput / ApplyDiscountInput
 ```
 
-The complete, uncollapsed file (all 12 actions written out in full, exactly as last validated) is at `/tmp/FINAL_agent_script_for_ui.agent` on this machine — not checked into the repo, since it embeds this org's specific generated Apex class type names (`complex_data_type_name` values), which are only meaningful for this exact org and would need regenerating for any other.
+The complete, uncollapsed file (all 12 actions written out in full) is tracked at `force-app/main/default/aiAuthoringBundles/ConsultantCloud_Revenue_Agent/ConsultantCloud_Revenue_Agent.agent`. It embeds this org's specific generated Apex class type names (`complex_data_type_name` values), which are only meaningful for this exact org and would need regenerating for any other.
 
 ## Known blocker
 
@@ -241,6 +241,9 @@ Reproduced three times across two days:
 | 2026-09-07 | CLI, existing agent | `705568708-1261912` |
 | 2026-09-07 | Agent Builder UI commit | `8243085-116925 (441397367)` |
 | 2026-09-08 | CLI, brand-new agent, no prior history | `f89f7627-f487-9f42-bc2b-89d9c5c785ca` |
+| 2026-09-08 | CLI, reconstructed validated bundle | `a3beeec9-d156-4eba-88d9-0ad04c4d5551` |
+| 2026-09-08 | CLI 2.150.6, reconstructed validated bundle | `1f641709-5135-4663-ac6f-3b47856311e0` |
+| 2026-09-08 | CLI 2.150.6, fresh actionless mock agent | `8b166928-5bcb-4751-a4d6-0088daa289b1` |
 
 The third attempt used a never-before-touched `developer_name`, ruling out a stuck-record explanation. `sf agent validate authoring-bundle` (compiler-only, no server write) passes with 0 errors every time — the script itself is not the problem. Salesforce's public trust status for this org's instance showed no active incident at the time of the third attempt, so this is likely a narrow, org- or feature-specific platform bug rather than a broad outage.
 
