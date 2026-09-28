@@ -2,11 +2,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { catalogTools, createServer, createRevenueGateway, toolDefinitions } from "@consultantcloud/revenue-mcp";
+import { readSalesforceSession } from "../../../../lib/salesforceSession";
 import { authorizeToolsRequest } from "../../../../lib/toolsBridgeAuth";
 
 export const runtime = "nodejs";
 
-const gateway = createRevenueGateway();
 
 const toolSchemas = Object.fromEntries(
   Object.entries(toolDefinitions).map(([name, definition]) => [name, definition.input])
@@ -28,6 +28,7 @@ function parseToolResult(result: unknown): unknown {
 }
 
 async function callTool(name: ToolName, args: Record<string, unknown>) {
+  const gateway = createRevenueGateway((await readSalesforceSession()) ?? undefined);
   const server = createServer(gateway);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "tools-rest-bridge", version: "0.1.0" });

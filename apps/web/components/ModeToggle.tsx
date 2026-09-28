@@ -2,35 +2,34 @@
 
 import { useRef } from "react";
 
+/** The agent's operating modes. Unchanged: these are what the chat API understands. */
 export type Mode = "user" | "architect";
 
+/** What the tab bar can show. "connection" is UI-only and never sent to the agent. */
+export type Tab = Mode | "connection";
+
+const TABS: Array<{ id: Tab; label: string }> = [
+  { id: "user", label: "User" },
+  { id: "architect", label: "Architect" },
+  { id: "connection", label: "Connection" },
+];
+
 type ModeToggleProps = {
-  mode: Mode;
-  onChange: (mode: Mode) => void;
+  tab: Tab;
+  onChange: (tab: Tab) => void;
 };
 
-export function ModeToggle({ mode, onChange }: ModeToggleProps) {
-  const userRef = useRef<HTMLButtonElement>(null);
-  const architectRef = useRef<HTMLButtonElement>(null);
-
-  const focusTab = (target: Mode) => {
-    if (target === "user") {
-      userRef.current?.focus();
-    } else {
-      architectRef.current?.focus();
-    }
-  };
+export function ModeToggle({ tab, onChange }: ModeToggleProps) {
+  const refs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
-      return;
-    }
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
-    const next: Mode = mode === "user" ? "architect" : "user";
-    focusTab(next);
-    if (next !== mode) {
-      onChange(next);
-    }
+    const index = TABS.findIndex((candidate) => candidate.id === tab);
+    const delta = event.key === "ArrowRight" ? 1 : -1;
+    const next = TABS[(index + delta + TABS.length) % TABS.length]!.id;
+    refs.current[next]?.focus();
+    if (next !== tab) onChange(next);
   };
 
   const activeStyle: React.CSSProperties = {
@@ -66,62 +65,24 @@ export function ModeToggle({ mode, onChange }: ModeToggleProps) {
         gap: "4px",
       }}
     >
-      <button
-        ref={userRef}
-        type="button"
-        role="tab"
-        aria-selected={mode === "user"}
-        onClick={() => {
-          if (mode !== "user") {
-            onChange("user");
-          }
-        }}
-        onKeyDown={handleKeyDown}
-        onMouseEnter={(e) => {
-          if (mode !== "user") {
-            e.currentTarget.style.color = "#1f2937";
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (mode !== "user") {
-            e.currentTarget.style.color = "#6b7280";
-          }
-        }}
-        style={{
-          ...baseButtonStyle,
-          ...(mode === "user" ? activeStyle : inactiveStyle),
-        }}
-      >
-        User
-      </button>
-      <button
-        ref={architectRef}
-        type="button"
-        role="tab"
-        aria-selected={mode === "architect"}
-        onClick={() => {
-          if (mode !== "architect") {
-            onChange("architect");
-          }
-        }}
-        onKeyDown={handleKeyDown}
-        onMouseEnter={(e) => {
-          if (mode !== "architect") {
-            e.currentTarget.style.color = "#1f2937";
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (mode !== "architect") {
-            e.currentTarget.style.color = "#6b7280";
-          }
-        }}
-        style={{
-          ...baseButtonStyle,
-          ...(mode === "architect" ? activeStyle : inactiveStyle),
-        }}
-      >
-        Architect
-      </button>
+      {TABS.map((candidate) => (
+        <button
+          key={candidate.id}
+          ref={(element) => {
+            refs.current[candidate.id] = element;
+          }}
+          type="button"
+          role="tab"
+          aria-selected={tab === candidate.id}
+          onClick={() => {
+            if (tab !== candidate.id) onChange(candidate.id);
+          }}
+          onKeyDown={handleKeyDown}
+          style={{ ...baseButtonStyle, ...(tab === candidate.id ? activeStyle : inactiveStyle) }}
+        >
+          {candidate.label}
+        </button>
+      ))}
     </div>
   );
 }

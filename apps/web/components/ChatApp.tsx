@@ -5,7 +5,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ConfirmationCard } from "./ConfirmationCard";
 import { ToolTracePanel } from "./ToolTracePanel";
-import { ModeToggle, type Mode } from "./ModeToggle";
+import { ModeToggle, type Mode, type Tab } from "./ModeToggle";
+import { ConnectionPanel } from "./ConnectionPanel";
 import { ArchitectDashboard } from "./ArchitectDashboard";
 import { CpqMigrationReportModal } from "./CpqMigrationReportModal";
 
@@ -63,7 +64,13 @@ const heroCopyByMode: Record<Mode, { title: string; body: string }> = {
 };
 
 export function ChatApp() {
-  const [mode, setMode] = useState<Mode>("user");
+  const [tab, setTab] = useState<Tab>("user");
+  // After the Salesforce OAuth round trip the callback lands on ?tab=connection.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "connection") setTab("connection");
+  }, []);
+  // "connection" is a UI-only tab; the agent still runs in the last real mode.
+  const mode: Mode = tab === "connection" ? "user" : tab;
   const [conversationId, setConversationId] = useState("");
   const [messages, setMessages] = useState<Array<{ role: "user" | "agent"; text: string }>>([]);
   const [history, setHistory] = useState<ChatTurn[]>([]);
@@ -157,10 +164,11 @@ export function ChatApp() {
     setConversationId(crypto.randomUUID());
   }
 
-  function handleModeChange(next: Mode) {
-    if (next === mode) return;
-    setMode(next);
-    handleNewConversation();
+  function handleModeChange(next: Tab) {
+    if (next === tab) return;
+    setTab(next);
+    // Switching to the connection tab must not discard an in-progress conversation.
+    if (next !== "connection") handleNewConversation();
   }
 
   const showEmptyState = messages.length === 0 && !isLoading && !pendingConfirmation;
@@ -174,11 +182,11 @@ export function ChatApp() {
           <img src="/consultantcloud-logo.png" alt="ConsultantCloud" width={124} height={32} />
         </div>
         <div>
-          <ModeToggle mode={mode} onChange={handleModeChange} />
+          <ModeToggle tab={tab} onChange={handleModeChange} />
           <span>OPEN SOURCE LAB</span>
           <a href="https://github.com/fizzy2562/ConsultantCloud-Revenue-Agent" target="_blank" rel="noreferrer">GitHub</a>
           <span>Built for Agentforce Revenue Management</span>
-          {mode === "user" && (
+          {tab === "user" && (
             <button type="button" className="cc-new-conversation" onClick={handleNewConversation}>
               New conversation
             </button>
@@ -186,7 +194,7 @@ export function ChatApp() {
         </div>
       </header>
 
-      {mode === "architect" && (
+      {tab === "architect" && (
         <div
           style={{
             background: "#fffbeb",
@@ -201,6 +209,11 @@ export function ChatApp() {
         </div>
       )}
 
+      {tab === "connection" ? (
+        <main style={{ padding: "24px" }}>
+          <ConnectionPanel />
+        </main>
+      ) : (
       <main>
         <section className="cc-hero">
           <h1>{hero.title}</h1>
@@ -304,6 +317,7 @@ export function ChatApp() {
 
         {mode === "architect" && <ArchitectDashboard />}
       </main>
+      )}
     </>
   );
 }

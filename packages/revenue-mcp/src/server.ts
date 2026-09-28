@@ -5,16 +5,23 @@ import { registerMutationTools } from "./tools/mutations";
 import { registerCatalogTools } from "./tools/catalog";
 import { RevenueGateway, MockRevenueGateway } from "@consultantcloud/shared";
 import { EventLogger, FileEventSink } from "@consultantcloud/telemetry";
-import { createSalesforceConnection } from "./salesforce/auth";
+import { createSalesforceConnection, resolveSalesforceCredentials, type SalesforceCredentials } from "./salesforce/auth";
 import { SalesforceRevenueGateway } from "./salesforce/salesforceGateway";
 
 export { catalogToolNames, catalogTools, toolCatalog, toolDefinitions } from "./toolCatalog";
 export type { ToolName } from "./toolCatalog";
 export { SALESFORCE_CAPABILITIES } from "./salesforce/salesforceGateway";
+export { resolveSalesforceCredentials, type SalesforceCredentials } from "./salesforce/auth";
 
-export function createRevenueGateway(): RevenueGateway {
-  if (process.env.SF_INSTANCE_URL && process.env.SF_ACCESS_TOKEN) {
-    return new SalesforceRevenueGateway(createSalesforceConnection());
+/**
+ * Per-request credentials win over the environment, so a user who signs in through the UI drives
+ * their own session rather than the deployment's static token. Without either, the mock gateway
+ * keeps the app usable.
+ */
+export function createRevenueGateway(creds?: SalesforceCredentials): RevenueGateway {
+  const resolved = resolveSalesforceCredentials(creds);
+  if (resolved) {
+    return new SalesforceRevenueGateway(createSalesforceConnection(resolved));
   }
   return new MockRevenueGateway();
 }
