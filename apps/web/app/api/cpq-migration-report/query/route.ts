@@ -43,7 +43,7 @@ export async function POST() {
     );
   }
 
-  const connection = new Connection({ ...credentials, version: "67.0" });
+  const connection = new Connection({ instanceUrl: credentials.instanceUrl, accessToken: credentials.accessToken, version: "67.0" });
   const entries = await Promise.all(cpqInspectors.map(async ({ tool, handler }) => {
     try {
       return [tool.name, await handler(connection, {})] as const;
