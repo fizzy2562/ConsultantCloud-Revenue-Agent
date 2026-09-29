@@ -28,8 +28,9 @@ const TARGETS: Record<Target, TargetConfig> = {
 
 const OAUTH_COOKIE = "sf_oauth";
 
-type StoredSession = SalesforceCredentials & { refreshToken?: string };
-type OAuthState = { verifier: string; state: string; redirectUri: string; target: Target };
+export type StoredSession = SalesforceCredentials & { refreshToken?: string };
+/** `slack` is set when the sign-in links a Slack user rather than this browser (see lib/slack/links.ts). */
+type OAuthState = { verifier: string; state: string; redirectUri: string; target: Target; slack?: { teamId: string; userId: string } };
 
 const cookieOptions = {
   httpOnly: true,
@@ -101,8 +102,8 @@ export async function takeOAuthState(): Promise<OAuthState | null> {
   return value;
 }
 
-/** Exchange a refresh token for a new access token, so a demo survives the session timeout. */
-export async function refreshSalesforceSession(stored: StoredSession, target: Target = "revenue"): Promise<StoredSession | null> {
+/** Exchange a refresh token for a new access token. Pure: callers decide where the result is stored. */
+export async function exchangeRefreshToken(stored: StoredSession, target: Target = "revenue"): Promise<StoredSession | null> {
   const clientId = salesforceClientId(target);
   if (!stored.refreshToken || !clientId) return null;
   const response = await fetch(`${salesforceLoginUrl(target)}/services/oauth2/token`, {
@@ -114,7 +115,12 @@ export async function refreshSalesforceSession(stored: StoredSession, target: Ta
   if (!response.ok) return null;
   const body = (await response.json()) as { access_token?: string; instance_url?: string };
   if (!body.access_token) return null;
-  const next = { ...stored, accessToken: body.access_token, instanceUrl: body.instance_url ?? stored.instanceUrl };
-  await writeSalesforceSession(next, target);
+  return { ...stored, accessToken: body.access_token, instanceUrl: body.instance_url ?? stored.instanceUrl };
+}
+
+/** Refresh the browser session, so a demo survives the session timeout. */
+export async function refreshSalesforceSession(stored: StoredSession, target: Target = "revenue"): Promise<StoredSession | null> {
+  const next = await exchangeRefreshToken(stored, target);
+  if (next) await writeSalesforceSession(next, target);
   return next;
 }

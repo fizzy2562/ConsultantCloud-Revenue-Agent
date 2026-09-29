@@ -1,0 +1,30 @@
+{
+  "display_information": {
+    "name": "Quick Pick",
+    "description": "Configure Revenue Cloud bundles on a quote without leaving Slack.",
+    "background_color": "#0b3d91"
+  },
+  "features": {
+    "app_home": { "home_tab_enabled": false, "messages_tab_enabled": true, "messages_tab_read_only_enabled": true },
+    "bot_user": { "display_name": "Quick Pick", "always_online": true },
+    "slash_commands": [
+      {
+        "command": "/quickpick",
+        "url": "https://consultantcloud-revenue-agent.vercel.app/api/slack/commands?x-vercel-protection-bypass=__VERCEL_AUTOMATION_BYPASS__",
+        "description": "Configure bundles on a Revenue Cloud quote",
+        "usage_hint": "[quote number, e.g. 49]",
+        "should_escape": false
+      }
+    ]
+  },
+  "oauth_config": { "scopes": { "bot": ["commands", "chat:write", "chat:write.public"] } },
+  "settings": {
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://consultantcloud-revenue-agent.vercel.app/api/slack/interactions?x-vercel-protection-bypass=__VERCEL_AUTOMATION_BYPASS__"
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

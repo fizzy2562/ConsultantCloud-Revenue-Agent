@@ -9,6 +9,8 @@ const nextConfig = {
     "@consultantcloud/policy",
     "@consultantcloud/telemetry",
     "@consultantcloud/shared",
+    "@revenue-picker/core",
+    "@revenue-picker/salesforce-revenue",
   ],
 };
 
