@@ -1,0 +1,50 @@
+<template>
+    <lightning-card title={cardTitle} icon-name="utility:einstein">
+        <lightning-button-icon slot="actions" icon-name="utility:refresh" alternative-text="New conversation"
+            title="New conversation" onclick={handleRestart} disabled={busy}></lightning-button-icon>
+
+        <div class="slds-p-horizontal_small">
+            <template lwc:if={quoteNumber}>
+                <p class="slds-text-body_small slds-text-color_weak slds-m-bottom_x-small">Asking about quote {quoteNumber}</p>
+            </template>
+
+            <div class="log" lwc:ref="log" aria-live="polite">
+                <ul class="slds-chat-list">
+                    <template for:each={messages} for:item="m">
+                        <li key={m.id} class={m.itemClass}>
+                            <div class="slds-chat-message">
+                                <div class="slds-chat-message__body">
+                                    <div class={m.bubbleClass}><span class="text">{m.text}</span></div>
+                                </div>
+                            </div>
+                        </li>
+                    </template>
+                </ul>
+                <template lwc:if={busy}>
+                    <div class="thinking slds-text-body_small slds-text-color_weak">
+                        <lightning-spinner alternative-text="Agent is thinking" size="x-small" variant="brand"></lightning-spinner>
+                        <span>Thinking…</span>
+                    </div>
+                </template>
+            </div>
+
+            <template lwc:if={error}>
+                <div class="slds-text-color_error slds-text-body_small slds-m-vertical_x-small" role="alert">{error}</div>
+            </template>
+
+            <template lwc:if={showSuggestions}>
+                <div class="suggestions">
+                    <template for:each={suggestions} for:item="s">
+                        <lightning-button key={s} label={s} data-text={s} onclick={handleSuggestion} class="slds-m-right_x-small slds-m-bottom_x-small"></lightning-button>
+                    </template>
+                </div>
+            </template>
+
+            <div class="composer">
+                <lightning-input class="grow" type="text" label="Message" variant="label-hidden" placeholder="Ask about a quote…"
+                    value={draft} onchange={handleInput} onkeyup={handleKeyUp} disabled={busy}></lightning-input>
+                <lightning-button variant="brand" label="Send" onclick={handleSend} disabled={sendDisabled}></lightning-button>
+            </div>
+        </div>
+    </lightning-card>
+</template>
