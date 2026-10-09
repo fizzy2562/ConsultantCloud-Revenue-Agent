@@ -6,12 +6,14 @@ import { setUpDemoData } from "../lib/demoData";
 function orgWithEverything() {
   const writes: string[] = [];
   const conn = {
-    query: vi.fn(async (soql: string) => ({ records: [{ Id: `id-for:${soql.slice(0, 40)}` }] })),
+    // Price book decision tables synced after the newest demo price: nothing to sync.
+    query: vi.fn(async (soql: string) => ({ records: [{ Id: `id-for:${soql.slice(0, 40)}`, LastSyncDate: "2099-01-01T00:00:00Z", LastModifiedDate: "2000-01-01T00:00:00Z" }] })),
     sobject: (name: string) => ({
       create: async () => (writes.push(`create ${name}`), { id: "new" }),
       update: async () => (writes.push(`update ${name}`), { id: "x" }),
     }),
     requestPost: vi.fn(async (url: string) => (writes.push(`action ${url}`), [{ isSuccess: true, outputValues: {} }])),
+    requestGet: vi.fn(async (url: string) => (writes.push(`action ${url}`), {})),
   } as unknown as Connection;
   return { conn, writes };
 }
@@ -28,9 +30,20 @@ describe("demo data setup", () => {
       "Product: Cloud Essentials",
       "Product: Cloud Pro",
       "Product: Premium Support",
+      "Pricing data sync",
       "Acme: current subscription (assets)",
       "Acme: open quote with a Cloud Pro line",
     ]);
+  });
+
+  it("starts a pricing sync when the price book decision tables are older than the demo prices", async () => {
+    const { conn, writes } = orgWithEverything();
+    (conn.query as ReturnType<typeof vi.fn>).mockImplementation(async (soql: string) => ({
+      records: [{ Id: "x", DeveloperName: "Price_Book_Entry_Decision_Table", LastSyncDate: soql.includes("DecisionTable") ? "2026-09-24T09:30:00Z" : null, LastModifiedDate: "2026-10-09T11:00:00Z" }],
+    }));
+    const steps = await setUpDemoData(conn);
+    expect(writes).toContain("action /services/data/v62.0/connect/core-pricing/sync/syncData");
+    expect(steps.find((s) => s.step === "Pricing data sync")?.status).toBe("pending");
   });
 
   it("reports a failed step and carries on with the others", async () => {

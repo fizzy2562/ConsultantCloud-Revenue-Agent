@@ -73,6 +73,8 @@ async function invokeFlowAction<T = Record<string, unknown>>(
  */
 export async function repriceQuote(conn: Connection, quoteId: string): Promise<string | null> {
   try {
+    // Patch the quote and each of its lines: patching the quote alone leaves existing lines unpriced.
+    const lines = await conn.query<{ Id: string; Quantity: number }>(`SELECT Id, Quantity FROM QuoteLineItem WHERE QuoteId = '${escapeSoql(quoteId)}'`);
     const response = await conn.requestPost<{ success?: boolean; responseError?: Array<{ message?: string; errorCode?: string }> }>(
       "/services/data/v62.0/commerce/quotes/actions/place",
       {
@@ -80,7 +82,14 @@ export async function repriceQuote(conn: Connection, quoteId: string): Promise<s
         configurationInput: "Skip",
         graph: {
           graphId: "reprice",
-          records: [{ referenceId: "refQuote", record: { attributes: { type: "Quote", method: "PATCH", id: quoteId } } }],
+          records: [
+            { referenceId: "refQuote", record: { attributes: { type: "Quote", method: "PATCH", id: quoteId } } },
+            ...lines.records.map((line, index) => ({
+              referenceId: `refLine${index}`,
+              // A patch with no field changes is ignored; restating the quantity makes it a change to price.
+              record: { attributes: { type: "QuoteLineItem", method: "PATCH", id: line.Id }, Quantity: line.Quantity },
+            })),
+          ],
         },
       }
     );

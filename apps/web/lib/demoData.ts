@@ -38,7 +38,7 @@ const q = (value: string) => value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function query<T extends Rec>(conn: Connection, soql: string): Promise<T[]> {
+async function query<T extends Rec = Rec>(conn: Connection, soql: string): Promise<T[]> {
   return (await conn.query<T>(soql)).records;
 }
 
@@ -141,6 +141,39 @@ export async function setUpDemoData(conn: Connection): Promise<StepResult[]> {
     } catch (error) {
       record(step, "failed", message(error));
     }
+  }
+
+  // 2b. Revenue Cloud prices from decision tables built from the price book. They only see
+  // entries that existed at their last sync, so new demo prices read as 0 until a sync runs.
+  try {
+    const demoIds = [...productIds.values()].map((id) => `'${id}'`).join(", ");
+    const [newest] = demoIds
+      ? await query<Rec & { LastModifiedDate: string }>(conn, `SELECT Id, LastModifiedDate FROM PricebookEntry WHERE Product2Id IN (${demoIds}) ORDER BY LastModifiedDate DESC LIMIT 1`)
+      : [];
+    const tables = await query<Rec & { DeveloperName: string; LastSyncDate: string | null }>(
+      conn,
+      "SELECT Id, DeveloperName, LastSyncDate FROM DecisionTable WHERE SourceObject = 'PricebookEntry' AND Status = 'Active'"
+    );
+    const stale = tables.filter((t) => newest && (!t.LastSyncDate || t.LastSyncDate < newest.LastModifiedDate));
+    if (!newest || tables.length === 0) {
+      record("Pricing data sync", "already there", tables.length ? "no demo prices to sync" : "no price book decision tables found");
+    } else if (stale.length === 0) {
+      record("Pricing data sync", "already there", "the price book decision tables include the demo prices");
+    } else {
+      try {
+        // Salesforce's Sync Pricing Data API starts the sync on a GET.
+        await conn.requestGet(`/services/data/${API}/connect/core-pricing/sync/syncData`);
+        record("Pricing data sync", "pending", `started; ${stale.map((t) => t.DeveloperName).join(", ")} will include the demo prices when it finishes (usually a minute or two). Run this again to check.`);
+      } catch (error) {
+        record(
+          "Pricing data sync",
+          "failed",
+          `${message(error)}. The demo products will price at 0 until it runs: Setup → Salesforce Pricing Setup → Sync Pricing Data (last sync ${stale[0]!.LastSyncDate?.slice(0, 10) ?? "never"}).`
+        );
+      }
+    }
+  } catch (error) {
+    record("Pricing data sync", "failed", message(error));
   }
 
   const acmeId = accountIds.get("Acme University");
