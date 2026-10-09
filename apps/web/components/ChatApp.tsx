@@ -111,9 +111,11 @@ export function ChatApp() {
       });
 
       if (!res.ok) {
+        // A setup problem (503) explains itself; anything else is worth a retry.
+        const reason = res.status === 503 ? ((await res.json().catch(() => null)) as { error?: string } | null)?.error : undefined;
         setMessages((prev) => [
           ...prev,
-          { role: "agent", text: "Something went wrong reaching the agent. Please try again." },
+          { role: "agent", text: reason ?? "Something went wrong reaching the agent. Please try again." },
         ]);
         return;
       }
