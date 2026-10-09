@@ -40,6 +40,7 @@ export function ConnectionPanel() {
       <ConnectionCard target="revenue" title="Revenue Cloud org" blurb="The org the agent quotes, prices and configures against." />
       <ConnectionCard target="cpq" title="CPQ source org" blurb="The legacy Salesforce CPQ org the migration report inspects." />
       <DemoDataCard />
+      <OrgChecksCard />
     </div>
   );
 }
@@ -289,6 +290,72 @@ function DemoDataCard() {
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+type OrgCheck = { name: string; ok: boolean; detail: string };
+
+/** Runs the org checks (the same ones as `pnpm test:org`) and shows each result. */
+function OrgChecksCard() {
+  const [availability, setAvailability] = useState<{ available: boolean; reason?: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [checks, setChecks] = useState<OrgCheck[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    fetch("/api/org-checks", { cache: "no-store" })
+      .then((response) => response.json())
+      .then(setAvailability)
+      .catch(() => setAvailability({ available: false, reason: "Couldn't reach the app." }));
+  }, []);
+
+  async function run() {
+    setBusy(true);
+    setChecks(null);
+    setError(null);
+    try {
+      const body = (await (await fetch("/api/org-checks", { method: "POST" })).json()) as { checks?: OrgCheck[]; error?: string };
+      if (body.checks) setChecks(body.checks);
+      else setError(body.error ?? "The checks failed to run.");
+    } catch {
+      setError("Couldn't reach the app. Is it still running?");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!availability) return null;
+  const passed = checks?.filter((c) => c.ok).length ?? 0;
+  return (
+    <div style={PANEL}>
+      <h2 style={{ marginTop: 0 }}>Org checks</h2>
+      <p style={{ fontSize: "0.9rem", opacity: 0.85 }}>
+        Checks the whole flow against this org, the same checks as <code>pnpm test:org</code>: the demo data, pricing, the &quot;why&quot; tools, and the
+        chat refusing a 30% discount and applying a 20% one with an approver (on the demo expansion quote), then reads the new price back from Salesforce.
+        Takes about a minute.
+      </p>
+      {!availability.available && <p style={{ fontSize: "0.85rem", color: "var(--cc-warn-text)" }}>{availability.reason}</p>}
+      {availability.available && (
+        <button type="button" style={PRIMARY} onClick={run} disabled={busy}>
+          {busy ? "Running checks… (about a minute)" : "Run org checks"}
+        </button>
+      )}
+      {error && <p style={{ fontSize: "0.85rem", color: "var(--cc-danger-text)" }}>{error}</p>}
+      {checks && (
+        <>
+          <p data-testid="org-checks-summary" style={{ margin: "1rem 0 0.5rem", fontWeight: 600, color: passed === checks.length ? "var(--cc-green-text)" : "var(--cc-danger-text)" }}>
+            {passed} of {checks.length} passed
+          </p>
+          <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8, fontSize: "0.875rem" }}>
+            {checks.map((c) => (
+              <li key={c.name}>
+                <strong style={{ color: c.ok ? "var(--cc-green-text)" : "var(--cc-danger-text)" }}>{c.ok ? "✓ pass" : "✗ fail"}</strong> {c.name}
+                {c.detail && <div style={{ color: "var(--cc-muted)", overflowWrap: "anywhere" }}>{c.detail}</div>}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );
