@@ -104,7 +104,8 @@ export async function diagnoseProductHandler(conn: Connection, input: { productI
 
     // 7. Evidence: how its recent quote lines priced.
     const lines = await records<any>(conn, `SELECT Quote.QuoteNumber, ListPrice, UnitPrice, NetTotalPrice, CreatedDate FROM QuoteLineItem WHERE Product2Id = '${id}' ORDER BY CreatedDate DESC LIMIT 20`);
-    const zero = lines.filter((l) => (l.ListPrice ?? 0) > 0 && !(l.UnitPrice > 0));
+    // Renewal lines leave UnitPrice empty and carry the price in NetTotalPrice.
+    const zero = lines.filter((l) => (l.ListPrice ?? 0) > 0 && !(l.UnitPrice > 0) && !(l.NetTotalPrice > 0));
     if (lines.length === 0) add("Quote lines", "not checked", "Not on any quote yet.");
     else add("Quote lines", zero.length ? "fail" : "pass", zero.length ? `${zero.length} of its last ${lines.length} quote lines have a list price but a unit price of 0 (e.g. quote ${zero[0].Quote?.QuoteNumber}): pricing ran but produced no price.` : `Its last ${lines.length} quote lines are priced.`);
 

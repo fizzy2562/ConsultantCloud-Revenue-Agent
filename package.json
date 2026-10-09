@@ -5,7 +5,8 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "lint": "pnpm -r lint"
+    "lint": "pnpm -r lint",
+    "test:org": "node scripts/org-smoke.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

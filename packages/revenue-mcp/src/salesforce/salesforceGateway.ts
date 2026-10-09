@@ -525,6 +525,8 @@ export class SalesforceRevenueGateway implements RevenueGateway {
       } catch (err) {
         console.warn(`Renewal quote ${renewalQuoteId} created, but linking it to the account failed: ${String(err)}`);
       }
+      const renewalPricingError = await repriceQuote(this.conn, renewalQuoteId);
+      if (renewalPricingError) console.warn(`Renewal quote ${renewalQuoteId}: pricing failed: ${renewalPricingError}`);
       let quoteNumber: string | undefined;
       let quoteStatus: string | undefined;
       try {
@@ -712,6 +714,12 @@ export class SalesforceRevenueGateway implements RevenueGateway {
   async updateQuoteLine(input: UpdateQuoteLineInput): Promise<ToolResult<UpdateQuoteLineResult>> {
     try {
       await this.conn.sobject("QuoteLineItem").update({ Id: input.quoteLineId, Quantity: input.quantity });
+      // A new quantity needs a new price.
+      const [line] = (await this.conn.query<{ QuoteId: string }>(`SELECT QuoteId FROM QuoteLineItem WHERE Id = '${escapeSoql(input.quoteLineId)}'`)).records;
+      if (line) {
+        const pricingError = await repriceQuote(this.conn, line.QuoteId);
+        if (pricingError) console.warn(`Quote ${line.QuoteId}: quantity updated, but pricing failed: ${pricingError}`);
+      }
       return {
         ok: true,
         data: { quoteLineId: input.quoteLineId, quantity: input.quantity },

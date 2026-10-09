@@ -65,7 +65,7 @@ export async function checkPricingHealthHandler(conn: Connection): Promise<Resul
     const since = addDays(today(), -90);
     const zero = await records<any>(
       conn,
-      `SELECT Product2.Name, Quote.QuoteNumber, CreatedDate FROM QuoteLineItem WHERE ListPrice > 0 AND (UnitPrice = 0 OR UnitPrice = null) AND CreatedDate >= ${since}T00:00:00Z ORDER BY CreatedDate DESC LIMIT 500`
+      `SELECT Product2.Name, Quote.QuoteNumber, CreatedDate FROM QuoteLineItem WHERE ListPrice > 0 AND (UnitPrice = 0 OR UnitPrice = null) AND (NetTotalPrice = 0 OR NetTotalPrice = null) AND CreatedDate >= ${since}T00:00:00Z ORDER BY CreatedDate DESC LIMIT 500`
     );
     const byProduct = new Map<string, { lines: number; latestQuote: string | null }>();
     for (const l of zero) {
