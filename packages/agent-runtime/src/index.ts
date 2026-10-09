@@ -89,13 +89,15 @@ const GENERATED_READ_TOOLS = [
   "get_fulfillment_plan", "get_price_adjustment_schedule", "get_pricing_procedure", "get_product_attributes",
   "get_product_configuration", "get_product_selling_models", "get_qualification_rules", "get_quote_line_detail",
   "get_rate_card", "get_renewal_terms", "get_revenue_order_status", "get_subscription_pricing_detail",
-  "list_catalog_categories", "list_decision_tables", "invoke_decision_table",
+  "list_catalog_categories", "list_decision_tables", "invoke_decision_table", "list_account_quotes",
 ];
 const USER_TOOLS = new Set(["find_account", "get_account_revenue_context", "search_products", "get_account_assets", "get_quote_summary", ...MUTATION_TOOLS, ...GENERATED_READ_TOOLS]);
 const ARCHITECT_TOOLS = new Set(["find_account", "get_account_revenue_context", "search_products", "get_account_assets", "get_quote_summary", "get_bundle_structure", ...CATALOG_MUTATION_TOOLS, ...GENERATED_READ_TOOLS]);
 
 const SYSTEM_PROMPT = `You are a commercial assistant for Salesforce Revenue Management requests involving quotes, renewals, amendments, quote line items, and discounts.
 Use the available tools to retrieve facts and perform requested work. Always resolve an account by name with find_account before calling any tool that needs an accountId. Use get_account_revenue_context and get_account_assets for account context, search_products to resolve products, and get_quote_summary to inspect a quote.
+A request for a discount always means apply_discount on an existing quote line, never a renewal or a new quote. When the user names only the account, call list_account_quotes and use the newest open quote that has a line for the relevant product (or any line if no product is named); create a new quote only if the account has no open quote with lines.
+Terms are in months: 1 year is 12, 3 years is 36. A renewal starts when the current subscription ends: use the assets' endDate (the renewal effective date is that date). Never use a date in the past or before the assets' startDate; if no end date is known, use today.
 When the user's request requires creating a quote, adding or removing a line item, updating a line item's quantity, or applying a discount, call that tool directly with the real arguments you intend — you do not need to ask the user for permission yourself; a separate confirmation step outside your control handles that. Never invent an account ID, product ID, quote ID, quote line ID, or price — only use values you got from a tool result.`;
 
 const ARCHITECT_SYSTEM_PROMPT = `You are a Salesforce Revenue Cloud consultant and solution architect assistant. Manage Product2 records, Standard Price Book prices, and bundle component structures with the available tools. Inspect existing records before changing them. For every write, call the intended tool directly with real fields. Do not ask the user for permission in your reply: the app shows them a confirmation card for the call you make, and nothing runs until they confirm. Never fabricate a product, pricebook entry, bundle component, component group, or relationship ID. Only use IDs returned by tools or explicitly supplied by the user.`;
@@ -127,7 +129,8 @@ async function confirmationFor(
   args: Record<string, unknown>,
   accountNames: Map<string, string>,
   quoteNumbers: Map<string, string>,
-  productNames: Map<string, string>
+  productNames: Map<string, string>,
+  lineLabels: Map<string, string> = new Map()
 ): Promise<PendingConfirmation> {
   const pendingArgs = { ...args };
   delete pendingArgs.confirmedByUser;
@@ -152,11 +155,11 @@ async function confirmationFor(
     case "add_quote_line":
       return { toolName, args, summary: { title: "Ready to add quote line", lines: [`Quote: ${quote()}`, `Product: ${product()}`, `Quantity: ${display(args.quantity)}`], confirmLabel: "Add line item", cancelLabel: "Cancel" } };
     case "remove_quote_line":
-      return { toolName, args, summary: { title: "Ready to remove quote line", lines: [`Quote line: ${display(args.quoteLineId)}`], confirmLabel: "Remove line item", cancelLabel: "Cancel" } };
+      return { toolName, args, summary: { title: "Ready to remove quote line", lines: [`Quote line: ${lineLabels.get(String(args.quoteLineId)) ?? display(args.quoteLineId)}`], confirmLabel: "Remove line item", cancelLabel: "Cancel" } };
     case "update_quote_line":
-      return { toolName, args, summary: { title: "Ready to update quote line quantity", lines: [`Quote line: ${display(args.quoteLineId)}`, `New quantity: ${display(args.quantity)}`], confirmLabel: "Update quantity", cancelLabel: "Cancel" } };
+      return { toolName, args, summary: { title: "Ready to update quote line quantity", lines: [`Quote line: ${lineLabels.get(String(args.quoteLineId)) ?? display(args.quoteLineId)}`, `New quantity: ${display(args.quantity)}`], confirmLabel: "Update quantity", cancelLabel: "Cancel" } };
     case "apply_discount":
-      return { toolName, args, summary: { title: "Ready to apply discount", lines: [`Quote: ${quote()}`, `Quote line: ${display(args.quoteLineId)}`, `Discount: ${display(args.discountPercent)}%`], confirmLabel: "Apply discount", cancelLabel: "Cancel", ...(evaluateDiscount(args.discountPercent as number).decision === "approval_required" ? { requiresApproverName: true } : {}) } };
+      return { toolName, args, summary: { title: "Ready to apply discount", lines: [`Quote: ${quote()}`, `Quote line: ${lineLabels.get(String(args.quoteLineId)) ?? display(args.quoteLineId)}`, `Discount: ${display(args.discountPercent)}%`], confirmLabel: "Apply discount", cancelLabel: "Cancel", ...(evaluateDiscount(args.discountPercent as number).decision === "approval_required" ? { requiresApproverName: true } : {}) } };
     case "create_product": return { toolName, args, summary: { title: "Ready to create product", lines: [`Name: ${display(args.name)}`, `Family: ${display(args.family)}`, `Type: ${display(args.type)}`], confirmLabel: "Create product", cancelLabel: "Cancel" } };
     case "update_product": return { toolName, args, summary: { title: "Ready to update product", lines: [`Product: ${display(args.productId)}`, `Name: ${display(args.name)}`], confirmLabel: "Update product", cancelLabel: "Cancel" } };
     case "set_product_price": return { toolName, args, summary: { title: "Ready to set product price", lines: [`Product: ${product()}`, `Unit price: ${display(args.unitPrice)}`], confirmLabel: "Set price", cancelLabel: "Cancel" } };
@@ -236,10 +239,12 @@ export async function runAgentTurn(
     type: "function",
     function: { name: tool.name, description: tool.description, parameters: tool.inputSchema },
   }));
-  const messages: ChatMessage[] = [{ role: "system", content: mode === "architect" ? ARCHITECT_SYSTEM_PROMPT : SYSTEM_PROMPT }, ...input.history];
+  const today = `Today's date is ${new Date().toISOString().slice(0, 10)}.`;
+  const messages: ChatMessage[] = [{ role: "system", content: `${mode === "architect" ? ARCHITECT_SYSTEM_PROMPT : SYSTEM_PROMPT}\n${today}` }, ...input.history];
   const trace: AgentTraceEntry[] = [];
   const accountNames = new Map<string, string>();
   const quoteNumbers = new Map<string, string>();
+  const lineLabels = new Map<string, string>();
   const productNames = new Map<string, string>();
   const seenIds = new Set<string>();
   let latestText = "";
@@ -253,6 +258,17 @@ export async function runAgentTurn(
       else if (value && typeof value === "object") Object.values(value as Record<string, unknown>).forEach(visit);
     };
     visit(result.data);
+    // list_account_quotes: remember quote numbers, and label each line by its product.
+    if (Array.isArray(result.data)) {
+      for (const item of result.data as Array<Record<string, unknown>>) {
+        if (typeof item?.quoteId === "string" && typeof item.quoteNumber === "string") quoteNumbers.set(item.quoteId, item.quoteNumber);
+        for (const line of Array.isArray(item?.lines) ? (item.lines as Array<Record<string, unknown>>) : []) {
+          if (typeof line.quoteLineId === "string" && typeof line.productName === "string") {
+            lineLabels.set(line.quoteLineId, typeof line.quantity === "number" ? `${line.productName} × ${line.quantity}` : line.productName);
+          }
+        }
+      }
+    }
     if (Array.isArray(result.data) || !result.data || typeof result.data !== "object") return;
     const data = result.data as Record<string, unknown>;
     if (typeof data.quoteId === "string" && typeof data.quoteNumber === "string") {
@@ -383,7 +399,7 @@ export async function runAgentTurn(
       if (typeof mutationArgs.sourceQuoteId === "string") mutationArgs.sourceQuoteId = await resolveQuoteId(client, mutationArgs.sourceQuoteId, rememberResult);
       const invalid = unprovenId(mutationArgs);
       if (invalid) return provenanceFailure(invalid);
-      const pending = await confirmationFor(client, mutation.function.name, mutationArgs, accountNames, quoteNumbers, productNames);
+      const pending = await confirmationFor(client, mutation.function.name, mutationArgs, accountNames, quoteNumbers, productNames, lineLabels);
       const authorizedIds = new Set(seenIds);
       const rememberAuthorizedArgument = (value: unknown) => {
         if (typeof value === "string" && looksLikeSalesforceId(value)) authorizedIds.add(value);

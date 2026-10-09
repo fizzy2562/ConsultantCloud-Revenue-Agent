@@ -57,7 +57,11 @@ async function invokeFlowAction<T = Record<string, unknown>>(
       if (!result) {
         return { isSuccess: false, outputValues: null };
       }
-      return { isSuccess: result.isSuccess, outputValues: result.outputValues };
+      // The action can run (result.isSuccess) while the flow inside reports failure in its own
+      // outputs (outputValues.isSuccess === false, with errorMessage). Both must hold, or a failed
+      // change would be reported as done.
+      const flowFailed = (result.outputValues as { isSuccess?: unknown } | null)?.isSuccess === false;
+      return { isSuccess: result.isSuccess && !flowFailed, outputValues: result.outputValues };
     })
   );
 }
@@ -195,7 +199,9 @@ export class SalesforceRevenueGateway implements RevenueGateway {
         Quantity: number | null;
         Status: string | null;
         Product2: { Name: string } | null;
-      }>(`SELECT Id, Name, Quantity, Status, Product2.Name FROM Asset WHERE Id IN (${idList})`);
+        LifecycleStartDate: string | null;
+        LifecycleEndDate: string | null;
+      }>(`SELECT Id, Name, Quantity, Status, Product2.Name, LifecycleStartDate, LifecycleEndDate FROM Asset WHERE Id IN (${idList})`);
       const data: AccountAsset[] = records.records.map((record) => ({
         id: record.Id,
         productName: record.Product2?.Name ?? null,
@@ -206,6 +212,8 @@ export class SalesforceRevenueGateway implements RevenueGateway {
         // here yet); left null rather than guessed.
         quoteId: null,
         quoteLineId: null,
+        startDate: record.LifecycleStartDate ?? null,
+        endDate: record.LifecycleEndDate ?? null,
       }));
       return { ok: true, data, meta: meta() };
     } catch (err) {
