@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "eval": "tsx runner.ts"
+    "eval": "tsx runner.ts",
+    "try-models": "tsx try-models.ts"
   },
   "dependencies": {
+    "@consultantcloud/agent-runtime": "workspace:*",
     "@consultantcloud/policy": "workspace:*",
     "@consultantcloud/revenue-mcp": "workspace:*",
     "@consultantcloud/shared": "workspace:*",

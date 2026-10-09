@@ -75,6 +75,20 @@ CPQ org and the demo records. Locally you can use static tokens instead: `SF_INS
 
 **Docker:** see [docs/docker.md](docs/docker.md).
 
+### Host a public demo without paying for visitors
+
+1. **Pick a free model.** Run `LLM_API_KEY=<your key> pnpm --filter @consultantcloud/evals try-models`.
+   It runs the renewal and discount scenarios through each candidate free model on the demo data
+   and shows which ones get them right.
+2. **Use it with its own key.** Create a separate OpenRouter key for the demo, with a credit limit
+   as a safety net, and set `LLM_API_KEY` and `LLM_MODEL` (the free model) on the deployment.
+   Free models cost nothing, but are capped per minute and per day.
+3. **Let visitors bring their own key.** Anyone can add their own OpenRouter key, and optionally
+   a model, on the Connection tab. It stays in their browser tab and is sent only with their
+   requests. When the free model is at its limit, the chat says so and points them there.
+
+Visitors who haven't signed in to Salesforce always get the demo data.
+
 ## How it's built
 
 ```

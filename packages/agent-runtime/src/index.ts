@@ -57,6 +57,14 @@ type ChatMessage = {
   tool_calls?: ChatToolCall[];
 };
 
+/** The model API refused or failed a request; `status` lets callers explain rate limits and bad keys. */
+export class LlmApiError extends Error {
+  constructor(readonly status: number, detail: string) {
+    super(`LLM API ${status}: ${detail}`);
+    this.name = "LlmApiError";
+  }
+}
+
 export const AGENT_RUNTIME_DEFAULTS = {
   apiUrl: "https://openrouter.ai/api/v1/chat/completions",
   model: "deepseek/deepseek-v4-flash-0731",
@@ -341,7 +349,7 @@ export async function runAgentTurn(
       await new Promise((resolve) => setTimeout(resolve, llmRetryDelaysMs[attempt]));
     }
     if (!response) throw new Error("LLM API request failed with no response");
-    if (!response.ok) throw new Error(`LLM API ${response.status}: ${(await response.text()).slice(0, 300)}`);
+    if (!response.ok) throw new LlmApiError(response.status, (await response.text()).slice(0, 300));
     const body = await response.json() as { choices?: Array<{ message?: ChatMessage }> };
     const assistant = body.choices?.[0]?.message;
     if (!assistant) throw new Error("LLM API response did not contain choices[0].message");
