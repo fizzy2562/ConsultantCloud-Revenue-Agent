@@ -90,6 +90,7 @@ const GENERATED_READ_TOOLS = [
   "get_product_configuration", "get_product_selling_models", "get_qualification_rules", "get_quote_line_detail",
   "get_rate_card", "get_renewal_terms", "get_revenue_order_status", "get_subscription_pricing_detail",
   "list_catalog_categories", "list_decision_tables", "invoke_decision_table", "list_account_quotes",
+  "diagnose_product", "explain_price", "get_customer_revenue_360", "explain_asset_history",
 ];
 const USER_TOOLS = new Set(["find_account", "get_account_revenue_context", "search_products", "get_account_assets", "get_quote_summary", ...MUTATION_TOOLS, ...GENERATED_READ_TOOLS]);
 const ARCHITECT_TOOLS = new Set(["find_account", "get_account_revenue_context", "search_products", "get_account_assets", "get_quote_summary", "get_bundle_structure", ...CATALOG_MUTATION_TOOLS, ...GENERATED_READ_TOOLS]);
@@ -97,6 +98,7 @@ const ARCHITECT_TOOLS = new Set(["find_account", "get_account_revenue_context", 
 const SYSTEM_PROMPT = `You are a commercial assistant for Salesforce Revenue Management requests involving quotes, renewals, amendments, quote line items, and discounts.
 Use the available tools to retrieve facts and perform requested work. Always resolve an account by name with find_account before calling any tool that needs an accountId. Use get_account_revenue_context and get_account_assets for account context, search_products to resolve products, and get_quote_summary to inspect a quote.
 A request for a discount always means apply_discount on an existing quote line, never a renewal or a new quote. When the user names only the account, call list_account_quotes and use the newest open quote that has a line for the relevant product (or any line if no product is named); create a new quote only if the account has no open quote with lines.
+For "why" questions, use the explaining tools: diagnose_product (a product can't be found, quoted or priced), explain_price (why a line or quote costs what it does), get_customer_revenue_360 (an account's commercial position) and explain_asset_history (how a subscription changed).
 Terms are in months: 1 year is 12, 3 years is 36. A renewal starts when the current subscription ends: use the assets' endDate (the renewal effective date is that date). Never use a date in the past or before the assets' startDate; if no end date is known, use today.
 When the user's request requires creating a quote, adding or removing a line item, updating a line item's quantity, or applying a discount, call that tool directly with the real arguments you intend — you do not need to ask the user for permission yourself; a separate confirmation step outside your control handles that. Never invent an account ID, product ID, quote ID, quote line ID, or price — only use values you got from a tool result.`;
 

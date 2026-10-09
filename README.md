@@ -21,6 +21,16 @@ until you confirm. Discount limits and approvals are enforced by code, not by th
   refused. All three are enforced in `packages/policy`, whatever the model says.
 - A live trace of every tool call, which you can download as an audit record.
 
+**Explain and diagnose ("why?" questions)**
+- **Diagnose a product:** why it can't be found, quoted or priced. It checks status, selling
+  models, price entries, catalog, whether pricing data is synced, and how its quote lines priced.
+- **Explain a price:** the waterfall from list price through term, discount and adjustments to
+  net, with findings such as a line that was never priced.
+- **Customer Revenue 360:** what an account owns, ARR, renewals due within 90 days, open quotes,
+  orders, contracts and invoices.
+- **Asset history:** how a subscription changed since purchase, with the original negotiated
+  price.
+
 **For architects (Architect mode)**
 - Catalog work by chat: find and create products, set prices, inspect and change bundle structure.
 - **CPQ → Revenue Cloud migration report.** It connects read-only to a Salesforce CPQ org and runs
@@ -40,7 +50,7 @@ Both recordings are against real Salesforce orgs. Waits for the model and the or
 - **The web app** (`apps/web`), with Salesforce OAuth sign-in for your Revenue Cloud and CPQ orgs.
 - **Slack:** `/quickpick` opens a quote and configures its bundles step by step, without leaving
   Slack.
-- **Agentforce:** the same 47 tools as Agentforce actions, through a REST bridge
+- **Agentforce:** the same 51 tools as Agentforce actions, through a REST bridge
   ([setup](docs/agentforce-setup.md)), and a Quote Assistant chat component for Lightning record
   pages ([setup](docs/quote-assistant-lightning.md)).
 - **Any MCP client:** `packages/revenue-mcp` is a standalone MCP server.
@@ -94,7 +104,7 @@ Visitors who haven't signed in to Salesforce always get the demo data.
 ```
 apps/web                      Next.js app: chat, trace, Architect mode, OAuth, Slack, REST bridge
 packages/agent-runtime        The live agent: discovers the MCP tools, plans with the LLM, gates changes
-packages/revenue-mcp          MCP server: 47 tools over a Salesforce gateway, or a mock gateway
+packages/revenue-mcp          MCP server: 51 tools over a Salesforce gateway, or a mock gateway
 packages/policy               Discount bands, confirmation rules, idempotency, retries, circuit breaker
 packages/shared               Zod schemas, types, the gateway interface and the mock gateway
 packages/cpq-analysis         CPQ inspectors and the rules-based migration report
