@@ -21,7 +21,8 @@ echo "==> Org instance: $INSTANCE_URL"
 
 # Guard: some agent/CLI harnesses redact secrets in flight. Pushing a redacted token would
 # leave the demo returning 401 with no obvious cause, so fail loudly instead.
-TOKEN=$(sf org display --target-org "$ORG" --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["result"]["accessToken"],end="")')
+# sf CLI 2.150+ hides the token in 'org display'; 'org auth show-access-token' is the supported way.
+TOKEN=$(sf org auth show-access-token -o "$ORG" -p --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["result"]["accessToken"],end="")')
 case "$TOKEN" in
   *REDACTED*|"") echo "ERROR: the token came back redacted or empty. Run this in your own terminal, not inside an agent session." >&2; exit 1 ;;
 esac
