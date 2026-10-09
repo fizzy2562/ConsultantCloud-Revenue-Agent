@@ -1,4 +1,5 @@
 import type { Connection } from "jsforce";
+import { repriceQuote } from "@consultantcloud/revenue-mcp";
 
 /**
  * Sets up the records the User-mode demo needs in a real Revenue Cloud org, idempotently:
@@ -178,6 +179,8 @@ export async function setUpDemoData(conn: Connection): Promise<StepResult[]> {
       30000
     );
     if (!line) throw new Error("the Cloud Pro line did not appear on the quote");
+    const pricingError = await repriceQuote(conn, resolvedQuoteId);
+    if (pricingError) console.warn(`Demo quote ${resolvedQuoteId}: pricing failed: ${pricingError}`);
     return resolvedQuoteId;
   };
 

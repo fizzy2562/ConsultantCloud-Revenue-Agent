@@ -10,7 +10,7 @@ import { SalesforceRevenueGateway } from "./salesforce/salesforceGateway";
 
 export { catalogToolNames, catalogTools, toolCatalog, toolDefinitions } from "./toolCatalog";
 export type { ToolName } from "./toolCatalog";
-export { SALESFORCE_CAPABILITIES } from "./salesforce/salesforceGateway";
+export { SALESFORCE_CAPABILITIES, repriceQuote } from "./salesforce/salesforceGateway";
 export { resolveSalesforceCredentials, type SalesforceCredentials } from "./salesforce/auth";
 
 /**
