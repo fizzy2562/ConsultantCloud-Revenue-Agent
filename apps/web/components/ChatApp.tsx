@@ -104,6 +104,8 @@ export function ChatApp() {
           ? "Cancelling proposal…"
           : "Thinking…"
     );
+    // A free model that's rate-limited is retried server-side; say so rather than look frozen.
+    const slowTimer = setTimeout(() => setPendingActionLabel("Still working: the model is busy, retrying…"), 12000);
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -132,6 +134,7 @@ export function ChatApp() {
         { role: "agent", text: "Something went wrong reaching the agent. Please try again." },
       ]);
     } finally {
+      clearTimeout(slowTimer);
       setIsLoading(false);
       sendInFlightRef.current = false;
     }

@@ -225,8 +225,12 @@ export async function setUpDemoData(conn: Connection): Promise<StepResult[]> {
 
   // 3. Acme's current subscription: real assets, so the renewal has something to renew.
   try {
-    const [asset] = await query(conn, `SELECT Id FROM Asset WHERE AccountId = '${acmeId}' AND Product2Id = '${cloudProId}' AND LifecycleStartDate != null LIMIT 1`);
-    if (asset) {
+    const liveAsset = `AccountId = '${acmeId}' AND Product2Id = '${cloudProId}' AND LifecycleStartDate != null AND (LifecycleEndDate = null OR LifecycleEndDate > ${today()}T23:59:59Z)`;
+    const [asset] = await query(conn, `SELECT Id FROM Asset WHERE ${liveAsset} LIMIT 1`);
+    const [zeroPriced] = asset ? await query(conn, `SELECT Id FROM AssetStatePeriod WHERE AssetId = '${asset.Id}' AND (Mrr = 0 OR Mrr = null) LIMIT 1`) : [];
+    if (asset && zeroPriced) {
+      record("Acme: current subscription (assets)", "failed", `Acme's subscription (${asset.Id}) was created before the products priced, so it's worth 0 and renewals of it will be too. Click Reset demo, then Set up demo data, to rebuild it priced.`);
+    } else if (asset) {
       record("Acme: current subscription (assets)", "already there", asset.Id);
     } else {
       // Reuse the subscription order from an earlier run if there is one; otherwise quote, then order.
@@ -263,13 +267,9 @@ export async function setUpDemoData(conn: Connection): Promise<StepResult[]> {
       }
       // Many orgs create assets on activation by themselves; ask for them only if none appear,
       // or the account ends up with duplicate subscriptions.
-      const findAsset = async () =>
-        (await query(conn, `SELECT Id FROM Asset WHERE AccountId = '${acmeId}' AND Product2Id = '${cloudProId}' AND LifecycleStartDate != null LIMIT 1`))[0];
+      const findAsset = async () => (await query(conn, `SELECT Id FROM Asset WHERE ${liveAsset} LIMIT 1`))[0];
       if (!(await waitFor(findAsset, 20000))) await standardAction(conn, "createOrUpdateAssetFromOrder", { orderId });
-      const created = await waitFor(
-        async () => (await query(conn, `SELECT Id FROM Asset WHERE AccountId = '${acmeId}' AND Product2Id = '${cloudProId}' AND LifecycleStartDate != null LIMIT 1`))[0],
-        45000
-      );
+      const created = await waitFor(findAsset, 45000);
       if (created) record("Acme: current subscription (assets)", "done", `${SUBSCRIPTION_SEATS} Cloud Pro seats, from order ${orderId}`);
       else record("Acme: current subscription (assets)", "pending", `order ${orderId} activated; Salesforce is still creating the assets. Run this again in a minute to check.`);
     }
@@ -306,4 +306,119 @@ export async function setUpDemoData(conn: Connection): Promise<StepResult[]> {
   }
 
   return results;
+}
+
+/**
+ * Clears the demo accounts' quotes, orders and assets, so "Set up demo data" can rebuild them in
+ * a known state. Only touches Acme University and Greenfield Health. Salesforce may refuse some
+ * deletions (an activated order, an asset with history); each step reports what it could and
+ * couldn't remove rather than stopping.
+ */
+export async function resetDemoData(conn: Connection): Promise<StepResult[]> {
+  const results: StepResult[] = [];
+  const record = (step: string, status: StepResult["status"], detail: string) => results.push({ step, status, detail });
+  const accounts = await query<Rec & { Name: string }>(conn, `SELECT Id, Name FROM Account WHERE Name IN (${ACCOUNTS.map((a) => `'${q(a.name)}'`).join(", ")})`);
+  if (accounts.length === 0) {
+    record("Demo accounts", "already there", "no demo accounts: nothing to reset");
+    return results;
+  }
+  const ids = accounts.map((a) => `'${a.Id}'`).join(", ");
+
+  const remove = async (step: string, soql: string, prepare?: (r: Rec) => Promise<void>) => {
+    const found = await query(conn, soql);
+    let removed = 0;
+    const errors: string[] = [];
+    for (const r of found) {
+      try {
+        if (prepare) await prepare(r);
+        await conn.sobject(soql.match(/FROM (\w+)/)![1]!).destroy(r.Id);
+        removed += 1;
+      } catch (error) {
+        errors.push(message(error));
+      }
+    }
+    if (found.length === 0) record(step, "already there", "none");
+    else if (errors.length === 0) record(step, "done", `removed ${removed}`);
+    else record(step, removed ? "pending" : "failed", `removed ${removed} of ${found.length}; ${[...new Set(errors)].slice(0, 2).join(" | ")}`);
+  };
+
+  try {
+    await remove("Open quotes", `SELECT Id FROM Quote WHERE AccountId IN (${ids}) AND Id NOT IN (SELECT QuoteId FROM Order WHERE QuoteId != null)`);
+  } catch (error) {
+    record("Open quotes", "failed", message(error));
+  }
+  try {
+    // Activated orders can't be deleted; put them back to Draft first.
+    await remove("Orders", `SELECT Id, Status FROM Order WHERE AccountId IN (${ids})`, async (r) => {
+      if ((r as Rec & { Status?: string }).Status === "Activated") await conn.sobject("Order").update({ Id: r.Id, Status: "Draft" });
+    });
+  } catch (error) {
+    record("Orders", "failed", message(error));
+  }
+  try {
+    await remove("Ordered quotes", `SELECT Id FROM Quote WHERE AccountId IN (${ids})`);
+  } catch (error) {
+    record("Ordered quotes", "failed", message(error));
+  }
+  try {
+    // Plain assets can be deleted; Revenue Cloud (lifecycle-managed) assets can't, so cancel those
+    // through Revenue Cloud: a cancellation order, activated, ends them today.
+    await remove("Assets", `SELECT Id FROM Asset WHERE AccountId IN (${ids}) AND LifecycleStartDate = null`);
+    const live = await query<Rec & { AccountId: string }>(
+      conn,
+      `SELECT Id, AccountId FROM Asset WHERE AccountId IN (${ids}) AND LifecycleStartDate != null AND (LifecycleEndDate = null OR LifecycleEndDate > ${today()}T23:59:59Z)`
+    );
+    if (live.length === 0) {
+      record("Subscriptions (assets)", "already there", "no live subscriptions to cancel");
+    } else {
+      for (const accountId of [...new Set(live.map((a) => a.AccountId))]) {
+        const assetIds = live.filter((a) => a.AccountId === accountId).map((a) => a.Id);
+        const step = `Cancel subscriptions: ${accounts.find((a) => a.Id === accountId)?.Name}`;
+        try {
+          const started = await standardAction(conn, "initiateCancellation", {
+            cancelAssetIds: assetIds,
+            cancelStartDate: new Date().toISOString(),
+            cancelOutputType: "Order",
+          });
+          const orderId =
+            (started.cancelRecordId as string | undefined) ??
+            (await waitFor(async () => (await query(conn, `SELECT Id FROM Order WHERE AccountId = '${accountId}' AND Status != 'Activated' ORDER BY CreatedDate DESC LIMIT 1`))[0]?.Id, 45000)) ??
+            undefined;
+          if (!orderId) throw new Error("the cancellation order didn't appear within 45 seconds");
+          const items = await waitFor(async () => (await query(conn, `SELECT Id FROM OrderItem WHERE OrderId = '${orderId}' LIMIT 1`))[0], 45000);
+          if (!items) throw new Error(`cancellation order ${orderId} has no items yet`);
+          await activateOrder(conn, orderId, accountId);
+          const ended = await waitFor(
+            async () =>
+              (await query(conn, `SELECT Id FROM Asset WHERE Id IN (${assetIds.map((id) => `'${id}'`).join(", ")}) AND (LifecycleEndDate = null OR LifecycleEndDate > ${today()}T23:59:59Z)`)).length === 0
+                ? true
+                : null,
+            45000
+          );
+          record(step, ended ? "done" : "pending", `${assetIds.length} cancelled through order ${orderId}${ended ? "" : "; Salesforce is still ending them, run Reset again in a minute to check"}`);
+        } catch (error) {
+          record(step, "failed", message(error));
+        }
+      }
+    }
+  } catch (error) {
+    record("Assets", "failed", message(error));
+  }
+  return results;
+}
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+/** Salesforce won't activate an order without billing and shipping addresses and a bill-to contact. */
+async function activateOrder(conn: Connection, orderId: string, accountId: string): Promise<void> {
+  const address = (prefix: "Billing" | "Shipping") =>
+    Object.fromEntries(Object.entries(DEMO_ADDRESS).map(([field, value]) => [`${prefix}${field}`, value]));
+  const [account] = await query<Rec & { BillingStreet?: string; ShippingStreet?: string }>(conn, `SELECT Id, BillingStreet, ShippingStreet FROM Account WHERE Id = '${accountId}'`);
+  if (!account?.BillingStreet || !account?.ShippingStreet) {
+    await conn.sobject("Account").update({ Id: accountId, ...(account?.BillingStreet ? {} : address("Billing")), ...(account?.ShippingStreet ? {} : address("Shipping")) });
+  }
+  const [contact] = await query(conn, `SELECT Id FROM Contact WHERE AccountId = '${accountId}' AND Email = '${q(BILLING_CONTACT.Email)}' LIMIT 1`);
+  const contactId = contact?.Id ?? ((await conn.sobject("Contact").create({ ...BILLING_CONTACT, AccountId: accountId })).id as string);
+  await conn.sobject("Order").update({ Id: orderId, BillToContactId: contactId, ...address("Billing"), ...address("Shipping") });
+  await conn.sobject("Order").update({ Id: orderId, Status: "Activated" });
 }

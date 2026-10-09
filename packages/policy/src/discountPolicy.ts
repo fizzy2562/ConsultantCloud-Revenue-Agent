@@ -25,11 +25,16 @@ export const discountThresholds: ThresholdRule[] = [
   },
 ];
 
-export const discountPolicyBands = [
-  { minPercent: 0, maxPercent: 15, decision: "permitted" },
-  { minPercent: 15, maxPercent: 25, decision: "approval_required", reason: "Discount exceeds 15% and requires manager approval" },
-  { minPercent: 25, maxPercent: null, decision: "rejected", reason: "Discount exceeds the maximum permitted threshold of 25%" },
-] as const;
+/**
+ * The same bands for display (the Architect dashboard), derived from discountThresholds so the
+ * limits shown can never differ from the limits enforced.
+ */
+export const discountPolicyBands = discountThresholds.map((rule, index) => ({
+  minPercent: index === 0 ? 0 : discountThresholds[index - 1]!.maxPercent,
+  maxPercent: Number.isFinite(rule.maxPercent) ? rule.maxPercent : null,
+  decision: rule.decision,
+  ...(rule.reason ? { reason: rule.reason } : {}),
+}));
 
 export function evaluateDiscount(percent: number): DiscountEvaluation {
   if (Number.isNaN(percent) || !Number.isFinite(percent) || percent < 0) {

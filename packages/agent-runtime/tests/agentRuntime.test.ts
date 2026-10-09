@@ -67,6 +67,39 @@ describe("agent runtime", () => {
     expect(result.trace).toHaveLength(8);
   });
 
+  it("retries a rate-limited model call, then carries on", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("rate limited", { status: 429, headers: { "retry-after": "0" } }))
+      .mockResolvedValueOnce(new Response("rate limited", { status: 429 }))
+      .mockResolvedValueOnce(chatCompletionResponse({ role: "assistant", content: "Done." }));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await runAgentTurn({ kind: "message", text: "hi", history: [] }, new MockRevenueGateway(), { retryDelaysMs: [1, 1, 1] });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(result.message).toBe("Done.");
+  });
+
+  it("gives up after the retries and reports the rate limit", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => new Response("rate limited", { status: 429 })));
+    await expect(runAgentTurn({ kind: "message", text: "hi", history: [] }, new MockRevenueGateway(), { retryDelaysMs: [1, 1] })).rejects.toMatchObject({ status: 429 });
+  });
+
+  it.each([
+    [2400, "No change needed: Cloud Pro is already 2400", "Price: 2400 → 2400"],
+    [1999, "Ready to set product price", "Price: 2400 → 1999"],
+  ])("shows the current price and the proposed one on the card (%s)", async (unitPrice, title, line) => {
+    const turn = vi.fn()
+      .mockResolvedValueOnce(chatCompletionResponse({ role: "assistant", content: "", tool_calls: [{ function: { name: "search_products", arguments: { query: "Cloud Pro" } } }] }))
+      .mockImplementationOnce(async (_url: string, init: RequestInit) => {
+        const toolResult = JSON.parse(JSON.parse(init.body as string).messages.at(-1).content);
+        const product = toolResult.data.find((p: { name: string }) => p.name === "Cloud Pro");
+        return chatCompletionResponse({ role: "assistant", content: "", tool_calls: [{ function: { name: "set_product_price", arguments: { productId: product.id, unitPrice } } }] });
+      });
+    vi.stubGlobal("fetch", turn);
+    const result = await runAgentTurn({ kind: "message", text: "Set Cloud Pro's price", history: [], mode: "architect" }, new MockRevenueGateway());
+    expect(result.pendingConfirmation?.summary.title).toBe(title);
+    expect(result.pendingConfirmation?.summary.lines).toContain(line);
+  });
+
   it("gates an architect catalog mutation before execution", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({ role: "assistant", content: "", tool_calls: [{ function: { name: "create_product", arguments: { name: "Architect Product", family: "Software" } } }] })));
     const gateway = new MockRevenueGateway(); const spy = vi.spyOn(gateway, "createProduct");
