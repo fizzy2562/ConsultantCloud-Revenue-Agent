@@ -76,6 +76,12 @@ describe("chat route", () => {
     expect((await response.json()).error).toMatch(/free model has hit its limit.*own OpenRouter key/);
   });
 
+  it("treats the deployment key reaching its spending cap (403) as the demo's limit", async () => {
+    runAgentTurn.mockRejectedValue(new LlmApiError(403, "Key limit exceeded (total limit)"));
+    const response = await turn(message);
+    expect((await response.json()).error).toMatch(/free model has hit its limit/);
+  });
+
   it("says when a visitor's own key is rejected", async () => {
     runAgentTurn.mockRejectedValue(new LlmApiError(401, "invalid key"));
     const response = await turn(message, { "x-llm-api-key": OWN_KEY });

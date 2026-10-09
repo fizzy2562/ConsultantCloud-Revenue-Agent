@@ -75,8 +75,9 @@ async function main() {
       try {
         outcome = await run(model);
       } catch (error) {
-        const limited = error instanceof LlmApiError && (error.status === 429 || error.status === 402);
-        outcome = { ok: false, note: limited ? "rate-limited (try again later)" : (error as Error).message.slice(0, 100) };
+        const limited = error instanceof LlmApiError && error.status === 429;
+        const capped = error instanceof LlmApiError && (error.status === 402 || error.status === 403);
+        outcome = { ok: false, note: limited ? "rate-limited (try again later)" : capped ? "the key's credit or spending cap blocked this model" : (error as Error).message.slice(0, 100) };
       }
       const took = (Date.now() - start) / 1000;
       seconds += took;

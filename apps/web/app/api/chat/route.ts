@@ -80,7 +80,9 @@ function explainModelError(status: number, ownKey: boolean): string | null {
     if (status === 400 || status === 404) return "The model you chose wasn't accepted. Check its name on the Connection tab, or leave it blank for the default.";
     return null;
   }
-  if (status === 429 || status === 402) {
+  // 429: the free model's rate limit. 402/403: the deployment key is out of credit or at the
+  // spending cap its owner set (OpenRouter answers "Key limit exceeded" with 403).
+  if (status === 429 || status === 402 || status === 403) {
     return "The demo's free model has hit its limit for now (free models are capped per minute and per day). Add your own OpenRouter key on the Connection tab to keep going, or try again later.";
   }
   return null;
