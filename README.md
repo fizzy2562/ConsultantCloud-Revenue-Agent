@@ -30,6 +30,12 @@ until you confirm. Discount limits and approvals are enforced by code, not by th
   It is assembled by rules, not by an LLM: see
   [an example report](docs/cpq-to-revenue-cloud-migration-report.md).
 
+| Inspect a bundle in a live Revenue Cloud org | Run the CPQ migration report on a live CPQ org |
+|---|---|
+| ![Asking Architect mode for the Laptop Pro Bundle's structure](docs/media/architect-bundle.gif) | ![Generating the CPQ to Revenue Cloud migration report](docs/media/cpq-migration-report.gif) |
+
+Both recordings are against real Salesforce orgs. Waits for the model and the org are sped up.
+
 **Where you can use it**
 - **The web app** (`apps/web`), with Salesforce OAuth sign-in for your Revenue Cloud and CPQ orgs.
 - **Slack:** `/quickpick` opens a quote and configures its bundles step by step, without leaving

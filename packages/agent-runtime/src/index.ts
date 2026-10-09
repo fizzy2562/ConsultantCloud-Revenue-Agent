@@ -60,7 +60,7 @@ type ChatMessage = {
 export const AGENT_RUNTIME_DEFAULTS = {
   apiUrl: "https://openrouter.ai/api/v1/chat/completions",
   model: "deepseek/deepseek-v4-flash-0731",
-  toolLoopLimit: 4,
+  toolLoopLimit: 8,
   confirmationRequired: true,
 } as const;
 
@@ -316,13 +316,13 @@ export async function runAgentTurn(
     return continuation ? `${confirmedMessage} ${continuation}` : confirmedMessage;
   };
 
-  for (let iteration = 0; iteration < AGENT_RUNTIME_DEFAULTS.toolLoopLimit; iteration += 1) {
+  const callModel = async (toolChoice: "auto" | "none"): Promise<ChatMessage> => {
     const apiKey = options.apiKey ?? process.env.LLM_API_KEY;
     if (!apiKey) throw new Error("LLM_API_KEY is required to call the configured chat completions API");
     const llmRequestInit: RequestInit = {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: options.model ?? AGENT_RUNTIME_DEFAULTS.model, messages, tools: chatTools, tool_choice: "auto", stream: false, max_tokens: 2048 }),
+      body: JSON.stringify({ model: options.model ?? AGENT_RUNTIME_DEFAULTS.model, messages, tools: chatTools, tool_choice: toolChoice, stream: false, max_tokens: 2048 }),
     };
     const llmRetryDelaysMs = [1000, 2000];
     let response: Response | undefined;
@@ -345,6 +345,11 @@ export async function runAgentTurn(
     const body = await response.json() as { choices?: Array<{ message?: ChatMessage }> };
     const assistant = body.choices?.[0]?.message;
     if (!assistant) throw new Error("LLM API response did not contain choices[0].message");
+    return assistant;
+  };
+
+  for (let iteration = 0; iteration < AGENT_RUNTIME_DEFAULTS.toolLoopLimit; iteration += 1) {
+    const assistant = await callModel("auto");
     latestText = assistant.content ?? latestText;
     messages.push(assistant);
     const calls = (assistant.tool_calls ?? []).map((call) => {
@@ -403,5 +408,12 @@ export async function runAgentTurn(
     }
   }
 
-  return { message: combinedMessage(latestText), trace, pendingConfirmation: null };
+  // Out of tool rounds: rather than return a half-finished "let me check..." as if it were the
+  // answer, ask once more with tools off, so the user gets what was found and what's missing.
+  messages.push({
+    role: "user",
+    content: "You have run out of tool calls for this turn. Reply now, without tools: summarise what you found, what you could not complete, and what the user should do next.",
+  });
+  const wrapUp = await callModel("none");
+  return { message: combinedMessage(wrapUp.content || latestText), trace, pendingConfirmation: null };
 }

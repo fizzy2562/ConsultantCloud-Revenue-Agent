@@ -51,6 +51,22 @@ describe("agent runtime", () => {
     for (const name of excluded) expect(names).not.toContain(name);
   });
 
+  it("answers properly when it runs out of tool rounds, instead of stopping mid-plan", async () => {
+    const readRound = () => chatCompletionResponse({ role: "assistant", content: "Let me check the billing summary.", tool_calls: [{ function: { name: "find_account", arguments: { name: "Acme" } } }] });
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) =>
+      JSON.parse(init.body as string).tool_choice === "none"
+        ? chatCompletionResponse({ role: "assistant", content: "Acme University has no open quote yet. Create one first, then I can apply the discount." })
+        : readRound());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runAgentTurn({ kind: "message", text: "Discount Acme", history: [] }, new MockRevenueGateway());
+
+    const choices = fetchMock.mock.calls.map((call) => JSON.parse(call[1].body as string).tool_choice);
+    expect(choices).toEqual([...Array(8).fill("auto"), "none"]);
+    expect(result.message).toBe("Acme University has no open quote yet. Create one first, then I can apply the discount.");
+    expect(result.trace).toHaveLength(8);
+  });
+
   it("gates an architect catalog mutation before execution", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(chatCompletionResponse({ role: "assistant", content: "", tool_calls: [{ function: { name: "create_product", arguments: { name: "Architect Product", family: "Software" } } }] })));
     const gateway = new MockRevenueGateway(); const spy = vi.spyOn(gateway, "createProduct");
