@@ -65,22 +65,25 @@ CPQ_LOGIN_URL=https://<cpq-my-domain>.my.salesforce.com
 Then sign in to the CPQ org on the Connection tab and use **Architect → Generate CPQ Migration
 Report**.
 
-## 5. Demo records (optional)
+## 5. Demo records
 
-To create the demo accounts and products (Acme University, Greenfield Health, Cloud
-Essentials, Cloud Pro and Premium Support) in your org:
+On the **Connection** tab, click **Set up demo data**. It is safe to run again: it only adds or
+fixes what's missing, and lists every step with its result. In the connected Revenue Cloud org it:
 
-```bash
-sf apex run --file salesforce/scripts/setup-demo-data.apex --target-org <alias>
-```
+- creates the Acme University and Greenfield Health accounts;
+- sets up Cloud Essentials, Cloud Pro and Premium Support so Revenue Cloud can quote and price
+  them: a price entry for their selling model (without one, adding a line fails with "Required
+  fields are missing: [PricebookEntryId]"), Configure During Sale set (without it, lines price
+  at 0), and no stray price entry without a selling model;
+- starts Revenue Cloud's **Sync Pricing Data** when the price book decision tables are older
+  than the demo prices (pricing can't see newer prices until it runs; it takes a minute or two);
+- gives Acme a current Cloud Pro subscription as real assets, through a quote, an order,
+  activation and assets, so there's something to renew;
+- gives Acme an open quote with a Cloud Pro line, so there's something to discount, and replaces
+  the line if it was added before the products were priced.
 
-It is safe to run more than once. Two limits on a real org:
-- **Quote lines:** adding a line depends on Revenue Cloud's product discovery index picking up
-  new products, which can take a while.
-- **Renewals:** the script inserts an Asset directly. Revenue Cloud only renews assets created
-  through its own order-to-asset process, so the renewal scenario needs a real asset.
-
-The full renewal, discount and approval flow is always available on the built-in demo data.
+To check any product yourself, ask the agent to "diagnose Cloud Pro" (the `diagnose_product`
+tool).
 
 ## Hosting it
 

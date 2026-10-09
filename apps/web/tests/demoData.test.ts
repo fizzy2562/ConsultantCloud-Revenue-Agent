@@ -7,7 +7,12 @@ function orgWithEverything() {
   const writes: string[] = [];
   const conn = {
     // Price book decision tables synced after the newest demo price: nothing to sync.
-    query: vi.fn(async (soql: string) => ({ records: [{ Id: `id-for:${soql.slice(0, 40)}`, LastSyncDate: "2099-01-01T00:00:00Z", LastModifiedDate: "2000-01-01T00:00:00Z" }] })),
+    query: vi.fn(async (soql: string) =>
+      // No stray price entries without a selling model; everything else exists.
+      soql.includes("ProductSellingModelId = null AND IsActive = true") || soql.includes("UnitPrice = 0 OR UnitPrice = null")
+        ? { records: [] }
+        : { records: [{ Id: `id-for:${soql.slice(0, 40)}`, ConfigureDuringSale: "Allowed", LastSyncDate: "2099-01-01T00:00:00Z", LastModifiedDate: "2000-01-01T00:00:00Z" }] }
+    ),
     sobject: (name: string) => ({
       create: async () => (writes.push(`create ${name}`), { id: "new" }),
       update: async () => (writes.push(`update ${name}`), { id: "x" }),
@@ -46,11 +51,23 @@ describe("demo data setup", () => {
     expect(steps.find((s) => s.step === "Pricing data sync")?.status).toBe("pending");
   });
 
+  it("deactivates a price entry without a selling model, which stops Revenue Cloud pricing the product", async () => {
+    const { conn, writes } = orgWithEverything();
+    const original = (conn.query as ReturnType<typeof vi.fn>).getMockImplementation() as (soql: string) => Promise<unknown>;
+    (conn.query as ReturnType<typeof vi.fn>).mockImplementation(async (soql: string) =>
+      soql.includes("ProductSellingModelId = null AND IsActive = true") ? { records: [{ Id: "01uStray" }] } : original(soql)
+    );
+    const steps = await setUpDemoData(conn);
+    expect(writes.filter((w) => w === "update PricebookEntry")).toHaveLength(3);
+    expect(steps.find((s) => s.step === "Product: Cloud Pro")).toMatchObject({ status: "done", detail: "price entry without a selling model deactivated" });
+  });
+
   it("reports a failed step and carries on with the others", async () => {
     const { conn } = orgWithEverything();
+    const everything = (conn.query as ReturnType<typeof vi.fn>).getMockImplementation() as (soql: string) => Promise<unknown>;
     (conn.query as ReturnType<typeof vi.fn>).mockImplementation(async (soql: string) => {
       if (soql.includes("FROM Account WHERE Name = 'Greenfield Health'")) throw new Error("no access to Account");
-      return { records: [{ Id: "x" }] };
+      return everything(soql);
     });
     const steps = await setUpDemoData(conn);
     expect(steps.find((s) => s.step === "Account: Greenfield Health")).toMatchObject({ status: "failed", detail: "no access to Account" });

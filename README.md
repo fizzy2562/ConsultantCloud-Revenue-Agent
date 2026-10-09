@@ -145,8 +145,10 @@ how they were caught.
 ## Known limits
 
 - `approvedBy` for the approval band is a recorded name, not a verified identity.
-- On a real org, adding quote lines depends on Salesforce's product discovery index having picked
-  up new products.
+- On a real org, a product prices correctly only if it has a price entry for its selling model,
+  has Configure During Sale set, and Revenue Cloud's pricing data has been synced since its
+  prices changed. The Connection tab's **Set up demo data** button does all of this for the demo
+  products, and `diagnose_product` checks it for any product.
 - Production use needs a dedicated integration user with JWT Bearer or Client Credentials, not a
   user's session. See [docs/security.md](docs/security.md).
 
