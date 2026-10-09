@@ -356,6 +356,16 @@ export async function resetDemoData(conn: Connection): Promise<StepResult[]> {
     record("Orders", "failed", message(error));
   }
   try {
+    // Renewal quotes made before renewals were linked to their account have no account at all.
+    const demoProducts = PRODUCTS.map((p) => `'${q(p.name)}'`).join(", ");
+    await remove(
+      "Detached renewal quotes",
+      `SELECT Id FROM Quote WHERE AccountId = null AND Name = 'Renewal Quote' AND Id IN (SELECT QuoteId FROM QuoteLineItem WHERE Product2.Name IN (${demoProducts}))`
+    );
+  } catch (error) {
+    record("Detached renewal quotes", "failed", message(error));
+  }
+  try {
     await remove("Ordered quotes", `SELECT Id FROM Quote WHERE AccountId IN (${ids})`);
   } catch (error) {
     record("Ordered quotes", "failed", message(error));
@@ -363,7 +373,9 @@ export async function resetDemoData(conn: Connection): Promise<StepResult[]> {
   try {
     // Plain assets can be deleted; Revenue Cloud (lifecycle-managed) assets can't, so cancel those
     // through Revenue Cloud: a cancellation order, activated, ends them today.
-    await remove("Assets", `SELECT Id FROM Asset WHERE AccountId IN (${ids}) AND LifecycleStartDate = null`);
+    // Cancelled Revenue Cloud assets keep their history (asset actions) and can't be deleted;
+    // they no longer count as subscriptions, so leave them.
+    await remove("Assets", `SELECT Id FROM Asset WHERE AccountId IN (${ids}) AND LifecycleStartDate = null AND Id NOT IN (SELECT AssetId FROM AssetAction)`);
     const live = await query<Rec & { AccountId: string }>(
       conn,
       `SELECT Id, AccountId FROM Asset WHERE AccountId IN (${ids}) AND LifecycleStartDate != null AND (LifecycleEndDate = null OR LifecycleEndDate > ${today()}T23:59:59Z)`

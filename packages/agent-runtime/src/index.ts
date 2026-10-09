@@ -266,6 +266,12 @@ export async function runAgentTurn(
   const quoteNumbers = new Map<string, string>();
   const lineLabels = new Map<string, string>();
   const current: CurrentValues = { lineQuantity: new Map(), lineDiscount: new Map(), productPrice: new Map() };
+  // Open quotes with lines seen this turn (from list_account_quotes), to catch an ambiguous discount.
+  const openQuotes = new Map<string, { quoteNumber: string; name: string; lines: string[] }>();
+  // Which quote each line is on, and the renewal created this turn (a follow-up quantity change
+  // must be on it, never on another quote).
+  const lineQuote = new Map<string, string>();
+  let renewalQuote: { id: string; number: string } | null = null;
   const productNames = new Map<string, string>();
   const seenIds = new Set<string>();
   let latestText = "";
@@ -279,17 +285,28 @@ export async function runAgentTurn(
       else if (value && typeof value === "object") Object.values(value as Record<string, unknown>).forEach(visit);
     };
     visit(result.data);
-    // list_account_quotes: remember quote numbers, and label each line by its product.
+    // Quote lines from any tool (list_account_quotes, get_quote_line_detail, ...): label them by
+    // product and remember their quantity and discount, for "current -> proposed" on cards.
+    const rememberLine = (line: Record<string, unknown>, quoteId?: unknown) => {
+      if (typeof line.quoteLineId !== "string") return;
+      const owner = typeof quoteId === "string" ? quoteId : typeof line.quoteId === "string" ? line.quoteId : undefined;
+      if (owner) lineQuote.set(line.quoteLineId, owner);
+      if (typeof line.productName === "string") {
+        lineLabels.set(line.quoteLineId, typeof line.quantity === "number" ? `${line.productName} × ${line.quantity}` : line.productName);
+      }
+      if (typeof line.quantity === "number") current.lineQuantity.set(line.quoteLineId, line.quantity);
+      current.lineDiscount.set(line.quoteLineId, typeof line.discountPercent === "number" ? line.discountPercent : 0);
+    };
     if (Array.isArray(result.data)) {
       for (const item of result.data as Array<Record<string, unknown>>) {
-        if (typeof item?.quoteId === "string" && typeof item.quoteNumber === "string") quoteNumbers.set(item.quoteId, item.quoteNumber);
-        for (const line of Array.isArray(item?.lines) ? (item.lines as Array<Record<string, unknown>>) : []) {
-          if (typeof line.quoteLineId === "string" && typeof line.productName === "string") {
-            lineLabels.set(line.quoteLineId, typeof line.quantity === "number" ? `${line.productName} × ${line.quantity}` : line.productName);
-          }
-          if (typeof line.quoteLineId === "string") {
-            if (typeof line.quantity === "number") current.lineQuantity.set(line.quoteLineId, line.quantity);
-            current.lineDiscount.set(line.quoteLineId, typeof line.discountPercent === "number" ? line.discountPercent : 0);
+        if (!item || typeof item !== "object") continue;
+        rememberLine(item);
+        if (typeof item.quoteId === "string" && typeof item.quoteNumber === "string") quoteNumbers.set(item.quoteId, item.quoteNumber);
+        const lines = Array.isArray(item.lines) ? (item.lines as Array<Record<string, unknown>>) : null;
+        if (lines) {
+          lines.forEach((line) => rememberLine(line, item.quoteId));
+          if (typeof item.quoteId === "string" && lines.length) {
+            openQuotes.set(item.quoteId, { quoteNumber: String(item.quoteNumber ?? item.quoteId), name: String(item.name ?? ""), lines: lines.map((l) => String(l.productName ?? "line") + (typeof l.quantity === "number" ? ` × ${l.quantity}` : "")) });
           }
         }
       }
@@ -350,6 +367,10 @@ export async function runAgentTurn(
     const blocked = !result.ok && (result.error?.code === "DISCOUNT_REJECTED" || result.error?.code === "CONFIRMATION_REQUIRED");
     trace.push({ tool: input.pending.toolName, badge: "WRITE", durationMs, blocked, summary: resultSummary(input.pending.toolName, result) });
     rememberResult(result);
+    if (input.pending.toolName === "create_renewal_quote" && result.ok) {
+      const created = result.data as { quoteId?: string; quoteNumber?: string };
+      if (created.quoteId) renewalQuote = { id: created.quoteId, number: created.quoteNumber ?? created.quoteId };
+    }
     confirmedMessage = resultMessage(input.pending.toolName, result);
     const confirmedToolCallId = `confirmed-${crypto.randomUUID()}`;
     messages.push({
@@ -423,6 +444,27 @@ export async function runAgentTurn(
     if (unavailable) throw new Error(`Tool ${unavailable.function.name} is not available in ${mode} mode`);
 
     const mutation = calls.find((call) => modeMutations.has(call.function.name));
+    // After a renewal, a quantity change belongs on the renewal quote. If the line is on another
+    // quote (the renewal's lines may not be readable yet), stop rather than change the wrong quote.
+    if (mutation?.function.name === "update_quote_line" && renewalQuote) {
+      const target = lineQuote.get(String(mutation.function.arguments.quoteLineId));
+      if (target !== renewalQuote.id) {
+        return {
+          message: combinedMessage(`I couldn't find the line on renewal quote ${renewalQuote.number} yet, so I haven't changed the quantity (the line I found is on a different quote). Ask me to update the quantity on quote ${renewalQuote.number} in a moment.`),
+          trace,
+          pendingConfirmation: null,
+        };
+      }
+    }
+    // A discount that doesn't say which quote, when several could be meant: ask rather than guess.
+    if (mutation?.function.name === "apply_discount" && input.kind === "message" && openQuotes.size > 1) {
+      const said = userMessages.join(" ");
+      const named = [...openQuotes.values()].some((q) => said.includes(q.quoteNumber) || (q.name && said.toLowerCase().includes(q.name.toLowerCase())));
+      if (!named) {
+        const options = [...openQuotes.values()].map((q) => `- ${q.quoteNumber}${q.name ? ` (${q.name})` : ""}: ${q.lines.join(", ")}`).join("\n");
+        return { message: combinedMessage(`Which quote should the discount go on? There are ${openQuotes.size} open quotes with lines:\n${options}\n\nReply with the quote number.`), trace, pendingConfirmation: null };
+      }
+    }
     if (mutation) {
       const mutationArgs = { ...(mutation.function.arguments ?? {}) };
       if (typeof mutationArgs.quoteId === "string") mutationArgs.quoteId = await resolveQuoteId(client, mutationArgs.quoteId, rememberResult);
@@ -458,6 +500,11 @@ export async function runAgentTurn(
         }
       }
       rememberResult(result);
+      if (call.function.name === "get_quote_line_detail" && result.ok && Array.isArray(result.data) && typeof args.quoteId === "string") {
+        for (const line of result.data as Array<Record<string, unknown>>) {
+          if (typeof line.quoteLineId === "string") lineQuote.set(line.quoteLineId, args.quoteId as string);
+        }
+      }
       if (!call.id) throw new Error(`LLM API tool call ${call.function.name} did not contain an id`);
       messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
     }

@@ -506,6 +506,25 @@ export class SalesforceRevenueGateway implements RevenueGateway {
           meta: meta(),
         };
       }
+      // The renewal action creates the quote without an opportunity, so it has no account and
+      // nothing that looks quotes up by account (list_account_quotes, reset) can find it. Attach
+      // it to the account's open opportunity, or a new one; its account follows.
+      try {
+        const [opportunity] = (
+          await this.conn.query<{ Id: string }>(`SELECT Id FROM Opportunity WHERE AccountId = '${escapeSoql(input.accountId)}' AND IsClosed = false ORDER BY CreatedDate DESC LIMIT 1`)
+        ).records;
+        const opportunityId =
+          opportunity?.Id ??
+          ((await this.conn.sobject("Opportunity").create({
+            Name: "Renewal",
+            AccountId: input.accountId,
+            StageName: "Qualification",
+            CloseDate: input.effectiveDate,
+          })).id as string);
+        await this.conn.sobject("Quote").update({ Id: renewalQuoteId, OpportunityId: opportunityId });
+      } catch (err) {
+        console.warn(`Renewal quote ${renewalQuoteId} created, but linking it to the account failed: ${String(err)}`);
+      }
       let quoteNumber: string | undefined;
       let quoteStatus: string | undefined;
       try {
