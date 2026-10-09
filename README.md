@@ -10,6 +10,10 @@ until you confirm. Discount limits and approvals are enforced by code, not by th
 
 ![The app: User mode, with starter prompts, the chat and the tool trace](docs/screenshots/landing.png)
 
+**Try it now: [consultantcloud-revenue-agent.vercel.app](https://consultantcloud-revenue-agent.vercel.app)**, on built-in demo
+data with a free model. No sign-up; add your own OpenRouter key on the Connection tab for a
+faster model.
+
 > Independent open-source project. Not affiliated with or endorsed by Salesforce.
 
 ## What it does
