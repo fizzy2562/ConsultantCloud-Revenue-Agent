@@ -1,5 +1,5 @@
 import { createRevenueGateway } from "@consultantcloud/revenue-mcp";
-import { readSalesforceSession } from "../../../lib/salesforceSession";
+import { envCredentialsAllowed, readSalesforceSession } from "../../../lib/salesforceSession";
 import { runAgentTurn, type RunAgentTurnInput } from "@consultantcloud/agent-runtime";
 
 export const runtime = "nodejs";
@@ -13,10 +13,11 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  const input = body as { kind?: unknown; conversationId?: unknown; mode?: unknown };
+  const input = body as { kind?: unknown; conversationId?: unknown; mode?: unknown; history?: unknown };
   if (
     typeof input.conversationId !== "string" ||
     typeof input.kind !== "string" ||
+    !Array.isArray(input.history) ||
     (input.kind !== "message" && input.kind !== "confirm" && input.kind !== "cancel") ||
     (input.mode !== undefined && input.mode !== "user" && input.mode !== "architect")
   ) {
@@ -24,8 +25,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Per request: the signed-in user's session takes precedence over the deployment's env token.
-    const gateway = createRevenueGateway((await readSalesforceSession()) ?? undefined);
+    // Per request: the signed-in user's session, else the deployment's env token where allowed,
+    // else the demo data.
+    const gateway = createRevenueGateway((await readSalesforceSession()) ?? undefined, {
+      useEnvironment: envCredentialsAllowed(),
+    });
     const result = await runAgentTurn({ ...(input as unknown as RunAgentTurnInput), mode: input.mode === "architect" ? "architect" : "user" }, gateway, {
       runId: input.conversationId,
       ...(process.env.LLM_API_KEY ? { apiKey: process.env.LLM_API_KEY } : {}),

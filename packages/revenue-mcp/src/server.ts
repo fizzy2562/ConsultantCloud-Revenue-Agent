@@ -16,10 +16,14 @@ export { resolveSalesforceCredentials, type SalesforceCredentials } from "./sale
 /**
  * Per-request credentials win over the environment, so a user who signs in through the UI drives
  * their own session rather than the deployment's static token. Without either, the mock gateway
- * keeps the app usable.
+ * keeps the app usable. With `useEnvironment: false` the environment is ignored, so a caller that
+ * hasn't signed in gets the mock gateway rather than the deployment's own org.
  */
-export function createRevenueGateway(creds?: SalesforceCredentials): RevenueGateway {
-  const resolved = resolveSalesforceCredentials(creds);
+export function createRevenueGateway(
+  creds?: SalesforceCredentials,
+  options: { useEnvironment?: boolean } = {}
+): RevenueGateway {
+  const resolved = creds ?? (options.useEnvironment === false ? null : resolveSalesforceCredentials());
   if (resolved) {
     return new SalesforceRevenueGateway(createSalesforceConnection(resolved));
   }

@@ -20,9 +20,8 @@ docker run -p 3000:3000 \
 - `TOOLS_API_KEY` is required for the `/api/tools` bridge to accept requests. The bridge fails closed when it is absent. See [Agentforce setup](./agentforce-setup.md) for configuration details.
 - `LLM_API_KEY` is required for live agent chat and is sent only as the bearer token to the configured chat completions API.
 - `LLM_API_URL` optionally overrides the default OpenRouter endpoint, `https://openrouter.ai/api/v1/chat/completions`.
-- `LLM_MODEL` optionally overrides the default model, `liquid/lfm-2.5-2.6b:free`.
-- `SF_INSTANCE_URL` and `SF_ACCESS_TOKEN` are optional. Setting both switches the app from the seeded mock gateway to real Salesforce.
-
-`host.docker.internal` works out of the box with Docker Desktop on macOS and Windows. On Linux, add `--add-host=host.docker.internal:host-gateway` to `docker run`.
+- `LLM_MODEL` optionally overrides the default model, `deepseek/deepseek-v4-flash-0731`.
+- `SESSION_SECRET` is required when anyone will sign in to Salesforce: it encrypts the session cookies.
+- `SF_INSTANCE_URL` and `SF_ACCESS_TOKEN` are optional. Setting both lets the REST bridge use real Salesforce. Visitors who haven't signed in still get the seeded demo data unless `ALLOW_ANONYMOUS_ORG_ACCESS=true`; see `.env.example`.
 
 Without `LLM_API_KEY`, the chat UI's agent reasoning fails with a runtime configuration error. The REST tools bridge under `/api/tools` and the trace-download endpoint do not use the hosted LLM and continue to work independently.

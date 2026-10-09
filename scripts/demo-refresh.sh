@@ -9,7 +9,7 @@
 # The token is piped straight from the sf CLI into Vercel; it is never printed.
 set -euo pipefail
 
-ORG="${ORG:-cc-revenue-org}"                       # fizzy2562catalog@hotmail.com
+ORG="${ORG:-cc-revenue-org}"
 ALIAS="${ALIAS:-consultantcloud-revenue-agent.vercel.app}"
 cd "$(dirname "$0")/.."
 

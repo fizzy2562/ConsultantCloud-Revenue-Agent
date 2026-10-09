@@ -1,0 +1,26 @@
+name: Bug report
+description: Something doesn't work as described
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The request you typed, the mode (User or Architect), and whether you were on the demo data or a Salesforce org.
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model (LLM_MODEL)
+  - type: textarea
+    id: trace
+    attributes:
+      label: Trace
+      description: Use "Download trace" in the app and paste the relevant part. Remove any org IDs you don't want public.

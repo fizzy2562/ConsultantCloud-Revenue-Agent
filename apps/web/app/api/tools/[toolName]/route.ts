@@ -2,7 +2,6 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { catalogTools, createServer, createRevenueGateway, toolDefinitions } from "@consultantcloud/revenue-mcp";
-import { readSalesforceSession } from "../../../../lib/salesforceSession";
 import { authorizeToolsRequest } from "../../../../lib/toolsBridgeAuth";
 
 export const runtime = "nodejs";
@@ -28,7 +27,9 @@ function parseToolResult(result: unknown): unknown {
 }
 
 async function callTool(name: ToolName, args: Record<string, unknown>) {
-  const gateway = createRevenueGateway((await readSalesforceSession()) ?? undefined);
+  // Server to server (a Salesforce Named Credential with a bearer key), so there is no browser
+  // session: the deployment's own credentials, or the demo data.
+  const gateway = createRevenueGateway();
   const server = createServer(gateway);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "tools-rest-bridge", version: "0.1.0" });
