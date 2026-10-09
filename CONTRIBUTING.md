@@ -14,7 +14,17 @@ pnpm -r test
 cd evals && npx tsx runner.ts
 ```
 
-CI runs those steps, plus `pnpm audit` and a gitleaks secrets scan. A pull request needs all of them
+CI runs those steps, plus `pnpm audit` and a gitleaks secrets scan.
+
+To check the whole flow against a real Revenue Cloud org, run the app connected to one (with
+the demo data set up, from the Connection tab) and then:
+
+```bash
+APP_URL=http://localhost:3000 TOOLS_API_KEY=<the app's key> pnpm test:org
+```
+
+It drives the chat and the tools API and checks the real outcomes in the org, such as a 30%
+discount refused and a 20% one applied, with Salesforce showing the new net price. A pull request needs all of them
 to pass.
 
 ## The rule to keep

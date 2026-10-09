@@ -206,6 +206,8 @@ function DemoDataCard() {
   const [busy, setBusy] = useState(false);
   const [steps, setSteps] = useState<DemoStep[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [lastAction, setLastAction] = useState<"set up" | "reset">("set up");
   useEffect(() => {
     fetch("/api/demo-data", { cache: "no-store" })
       .then((response) => response.json())
@@ -213,12 +215,14 @@ function DemoDataCard() {
       .catch(() => setOrg({ available: false }));
   }, []);
 
-  async function run() {
+  async function run(method: "POST" | "DELETE" = "POST") {
     setBusy(true);
     setError(null);
     setSteps(null);
+    setConfirmingReset(false);
+    setLastAction(method === "POST" ? "set up" : "reset");
     try {
-      const response = await fetch("/api/demo-data", { method: "POST" });
+      const response = await fetch("/api/demo-data", { method });
       const body = (await response.json()) as { steps?: DemoStep[]; error?: string };
       if (body.steps) setSteps(body.steps);
       else setError(body.error ?? "Setup failed.");
@@ -243,9 +247,35 @@ function DemoDataCard() {
       {org?.available && (
         <>
           <p style={{ fontSize: "0.85rem", color: "var(--cc-muted)" }}>Org: {org.instanceUrl}</p>
-          <button type="button" style={PRIMARY} onClick={run} disabled={busy}>
-            {busy ? "Setting up… (up to 2 minutes)" : "Set up demo data"}
-          </button>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <button type="button" style={PRIMARY} onClick={() => run("POST")} disabled={busy}>
+              {busy && lastAction === "set up" ? "Setting up… (up to 2 minutes)" : "Set up demo data"}
+            </button>
+            <button
+              type="button"
+              style={{ ...PRIMARY, background: "#ffffff", color: "var(--cc-danger-text)", border: "1px solid var(--cc-danger-line)", fontWeight: 500 }}
+              onClick={() => setConfirmingReset(true)}
+              disabled={busy}
+            >
+              {busy && lastAction === "reset" ? "Resetting… (up to 2 minutes)" : "Reset demo"}
+            </button>
+          </div>
+          {confirmingReset && (
+            <div role="alert" style={{ marginTop: 12, padding: "10px 12px", borderRadius: 8, background: "var(--cc-warn-bg)", color: "var(--cc-warn-text)", fontSize: "0.875rem", display: "grid", gap: 10 }}>
+              <span>
+                Reset deletes every quote and order on Acme University and Greenfield Health, and cancels their subscriptions as of today.
+                Nothing else in the org is touched. Then click Set up demo data to rebuild them.
+              </span>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button type="button" style={{ ...PRIMARY, background: "var(--cc-danger-text)" }} onClick={() => run("DELETE")}>
+                  Yes, reset the demo accounts
+                </button>
+                <button type="button" style={{ ...PRIMARY, background: "#ffffff", color: "var(--cc-ink)", border: "1px solid var(--cc-control)", fontWeight: 500 }} onClick={() => setConfirmingReset(false)}>
+                  Keep them
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
       {error && <p style={{ fontSize: "0.85rem", color: "var(--cc-danger-text)" }}>{error}</p>}

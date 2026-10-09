@@ -66,10 +66,11 @@ export async function explainPriceHandler(conn: Connection, input: { quoteLineId
       waterfall.push({ step: "Net unit price", amount: l.NetUnitPrice ?? null, detail: "after discounts and adjustments" });
       waterfall.push({ step: "Net total", amount: l.NetTotalPrice ?? l.TotalPrice ?? null, detail: `× ${l.Quantity ?? "?"}` });
 
-      if ((list ?? 0) > 0 && !(l.UnitPrice > 0)) {
+      if ((list ?? 0) > 0 && !(l.UnitPrice > 0) && !(l.NetTotalPrice > 0)) {
         findings.push("This line has a list price but its unit price is 0: Revenue Cloud's pricing never priced it. Check that pricing data is synced (diagnose_product) and that the pricing procedure's list-price step matches this product and selling model.");
       }
-      if (l.Discount && !(l.UnitPrice > 0)) findings.push(`A ${l.Discount}% discount is recorded, but it has no effect until the line is priced.`);
+      if (l.UnitPrice == null && l.NetTotalPrice > 0) findings.push("Revenue Cloud priced this line as a whole (typical for renewals): the unit price is empty and the price is in the net total.");
+      if (l.Discount && !(l.UnitPrice > 0) && !(l.NetTotalPrice > 0)) findings.push(`A ${l.Discount}% discount is recorded, but it has no effect until the line is priced.`);
       if (l.UnitPrice > 0 && list != null && l.PricingTermCount && Math.abs(l.UnitPrice - list * l.PricingTermCount) > 0.01 && !l.Discount) {
         findings.push(`The unit price (${l.UnitPrice}) differs from list × term (${round2(list * l.PricingTermCount)}): a pricing rule, contract price or proration changed it.`);
       }

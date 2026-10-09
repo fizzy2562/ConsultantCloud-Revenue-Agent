@@ -14,12 +14,19 @@ until you confirm. Discount limits and approvals are enforced by code, not by th
 
 ## What it does
 
+| Renew and change seats, each change confirmed | Discount guardrails: 30% refused, 20% approved | Ask why a price is what it is |
+|---|---|---|
+| ![Renewing Acme for 3 years and increasing Cloud Pro to 250 seats](docs/media/chat-renewal.gif) | ![A 30% discount blocked by policy, then 20% applied with an approver](docs/media/chat-guardrails.gif) | ![Explaining the price waterfall of a quote line](docs/media/chat-why.gif) |
+
+Recorded against a live Revenue Cloud org on a free model. Waits for the model are sped up.
+
 **For sellers (User mode)**
 - Renewals, new quotes, amendments, quantity and term changes, from one sentence.
 - A confirmation card for every change, listing the exact account, products and terms.
 - Discount guardrails: up to 15% goes through, 15–25% needs a named approver, and over 25% is
   refused. All three are enforced in `packages/policy`, whatever the model says.
 - A live trace of every tool call, which you can download as an audit record.
+- Confirmation cards show what will change (*Quantity: 100 → 250*), and say when nothing would.
 
 **Explain and diagnose ("why?" questions)**
 - **Diagnose a product:** why it can't be found, quoted or priced. It checks status, selling
@@ -30,6 +37,9 @@ until you confirm. Discount limits and approvals are enforced by code, not by th
   orders, contracts and invoices.
 - **Asset history:** how a subscription changed since purchase, with the original negotiated
   price.
+- **Explain a decision table:** what it reads, its inputs and outputs, when it last synced, and
+  what it returns for inputs you give it.
+- **Pricing health:** an org-wide check for products that won't price, and why.
 
 **For architects (Architect mode)**
 - Catalog work by chat: find and create products, set prices, inspect and change bundle structure.
@@ -50,7 +60,7 @@ Both recordings are against real Salesforce orgs. Waits for the model and the or
 - **The web app** (`apps/web`), with Salesforce OAuth sign-in for your Revenue Cloud and CPQ orgs.
 - **Slack:** `/quickpick` opens a quote and configures its bundles step by step, without leaving
   Slack.
-- **Agentforce:** the same 51 tools as Agentforce actions, through a REST bridge
+- **Agentforce:** the same 53 tools as Agentforce actions, through a REST bridge
   ([setup](docs/agentforce-setup.md)), and a Quote Assistant chat component for Lightning record
   pages ([setup](docs/quote-assistant-lightning.md)).
 - **Any MCP client:** `packages/revenue-mcp` is a standalone MCP server.
@@ -104,7 +114,7 @@ Visitors who haven't signed in to Salesforce always get the demo data.
 ```
 apps/web                      Next.js app: chat, trace, Architect mode, OAuth, Slack, REST bridge
 packages/agent-runtime        The live agent: discovers the MCP tools, plans with the LLM, gates changes
-packages/revenue-mcp          MCP server: 51 tools over a Salesforce gateway, or a mock gateway
+packages/revenue-mcp          MCP server: 53 tools over a Salesforce gateway, or a mock gateway
 packages/policy               Discount bands, confirmation rules, idempotency, retries, circuit breaker
 packages/shared               Zod schemas, types, the gateway interface and the mock gateway
 packages/cpq-analysis         CPQ inspectors and the rules-based migration report

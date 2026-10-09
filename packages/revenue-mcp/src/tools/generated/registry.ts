@@ -27,6 +27,8 @@ import { diagnoseProductTool, diagnoseProductHandler } from "./diagnose_product"
 import { explainPriceTool, explainPriceHandler } from "./explain_price";
 import { customerRevenue360Tool, customerRevenue360Handler } from "./customer_revenue_360";
 import { explainAssetHistoryTool, explainAssetHistoryHandler } from "./explain_asset_history";
+import { explainDecisionTableTool, explainDecisionTableHandler } from "./explain_decision_table";
+import { checkPricingHealthTool, checkPricingHealthHandler } from "./check_pricing_health";
 import { getRevenueOrderStatusTool, getRevenueOrderStatusHandler } from "./get_revenue_order_status";
 import { getSubscriptionPricingDetailTool, getSubscriptionPricingDetailHandler } from "./get_subscription_pricing_detail";
 import { listCatalogCategoriesTool, listCatalogCategoriesHandler } from "./list_catalog_categories";
@@ -59,6 +61,7 @@ const pairs: Array<[DraftTool, DraftHandler]> = [
   [listAccountQuotesTool, listAccountQuotesHandler],
   [diagnoseProductTool, diagnoseProductHandler], [explainPriceTool, explainPriceHandler],
   [customerRevenue360Tool, customerRevenue360Handler], [explainAssetHistoryTool, explainAssetHistoryHandler],
+  [explainDecisionTableTool, explainDecisionTableHandler], [checkPricingHealthTool, checkPricingHealthHandler],
   [getSubscriptionPricingDetailTool, getSubscriptionPricingDetailHandler], [listCatalogCategoriesTool, listCatalogCategoriesHandler],
   [listDecisionTablesTool, listDecisionTablesHandler],
   [invokeDecisionTableTool, invokeDecisionTableHandler],

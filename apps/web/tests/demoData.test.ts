@@ -9,7 +9,7 @@ function orgWithEverything() {
     // Price book decision tables synced after the newest demo price: nothing to sync.
     query: vi.fn(async (soql: string) =>
       // No stray price entries without a selling model; everything else exists.
-      soql.includes("ProductSellingModelId = null AND IsActive = true") || soql.includes("UnitPrice = 0 OR UnitPrice = null")
+      soql.includes("ProductSellingModelId = null AND IsActive = true") || soql.includes("UnitPrice = 0 OR UnitPrice = null") || soql.includes("Mrr = 0 OR Mrr = null")
         ? { records: [] }
         : { records: [{ Id: `id-for:${soql.slice(0, 40)}`, ConfigureDuringSale: "Allowed", LastSyncDate: "2099-01-01T00:00:00Z", LastModifiedDate: "2000-01-01T00:00:00Z" }] }
     ),

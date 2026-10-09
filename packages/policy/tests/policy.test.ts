@@ -81,3 +81,15 @@ describe("withIdempotency", () => {
     await expect(withIdempotency(store, "key-1", "fp-2", async () => 2)).rejects.toBeInstanceOf(IdempotencyConflictError);
   });
 });
+
+describe("discount bands shown to architects", () => {
+  it("are derived from the enforced thresholds", async () => {
+    const { discountPolicyBands, discountThresholds } = await import("../src/discountPolicy");
+    expect(discountPolicyBands).toEqual([
+      { minPercent: 0, maxPercent: 15, decision: "permitted" },
+      { minPercent: 15, maxPercent: 25, decision: "approval_required", reason: "Discount exceeds 15% and requires manager approval" },
+      { minPercent: 25, maxPercent: null, decision: "rejected", reason: "Discount exceeds the maximum permitted threshold of 25%" },
+    ]);
+    expect(discountPolicyBands).toHaveLength(discountThresholds.length);
+  });
+});

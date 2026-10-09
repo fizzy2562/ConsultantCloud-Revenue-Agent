@@ -36,6 +36,8 @@ export type RunAgentTurnInput = (
   | { kind: "cancel"; pending: PendingConfirmation; history: ChatTurn[] }) & { mode?: AgentMode };
 
 export interface AgentRuntimeOptions {
+  /** Waits between retries of a failed model call (tests pass short ones). */
+  retryDelaysMs?: number[];
   apiKey?: string;
   apiUrl?: string;
   model?: string;
@@ -91,14 +93,16 @@ const GENERATED_READ_TOOLS = [
   "get_rate_card", "get_renewal_terms", "get_revenue_order_status", "get_subscription_pricing_detail",
   "list_catalog_categories", "list_decision_tables", "invoke_decision_table", "list_account_quotes",
   "diagnose_product", "explain_price", "get_customer_revenue_360", "explain_asset_history",
+  "explain_decision_table", "check_pricing_health",
 ];
 const USER_TOOLS = new Set(["find_account", "get_account_revenue_context", "search_products", "get_account_assets", "get_quote_summary", ...MUTATION_TOOLS, ...GENERATED_READ_TOOLS]);
 const ARCHITECT_TOOLS = new Set(["find_account", "get_account_revenue_context", "search_products", "get_account_assets", "get_quote_summary", "get_bundle_structure", ...CATALOG_MUTATION_TOOLS, ...GENERATED_READ_TOOLS]);
 
 const SYSTEM_PROMPT = `You are a commercial assistant for Salesforce Revenue Management requests involving quotes, renewals, amendments, quote line items, and discounts.
 Use the available tools to retrieve facts and perform requested work. Always resolve an account by name with find_account before calling any tool that needs an accountId. Use get_account_revenue_context and get_account_assets for account context, search_products to resolve products, and get_quote_summary to inspect a quote.
-A request for a discount always means apply_discount on an existing quote line, never a renewal or a new quote. When the user names only the account, call list_account_quotes and use the newest open quote that has a line for the relevant product (or any line if no product is named); create a new quote only if the account has no open quote with lines.
-For "why" questions, use the explaining tools: diagnose_product (a product can't be found, quoted or priced), explain_price (why a line or quote costs what it does), get_customer_revenue_360 (an account's commercial position) and explain_asset_history (how a subscription changed).
+A request for a discount always means apply_discount on an existing quote line, never a renewal or a new quote. When the user names only the account, call list_account_quotes. If exactly one open quote has a line for the relevant product (or exactly one open quote has lines, when no product is named), use it. If more than one could be meant, don't guess: list them (quote number, name and lines) and ask which one. Create a new quote only if the account has no open quote with lines.
+If a renewal request also changes a quantity (for example "renew and increase Cloud Pro to 250 seats"), first create the renewal; once it's confirmed, call list_account_quotes to find the renewal quote's line for that product and call update_quote_line with the new quantity, which the user confirms separately.
+For "why" questions, use the explaining tools: diagnose_product (a product can't be found, quoted or priced), explain_price (why a line or quote costs what it does), get_customer_revenue_360 (an account's commercial position), explain_asset_history (how a subscription changed), explain_decision_table (what a decision table does and what it returns for given inputs) and check_pricing_health (which products across the org won't price, and why).
 Terms are in months: 1 year is 12, 3 years is 36. A renewal starts when the current subscription ends: use the assets' endDate (the renewal effective date is that date). Never use a date in the past or before the assets' startDate; if no end date is known, use today.
 When the user's request requires creating a quote, adding or removing a line item, updating a line item's quantity, or applying a discount, call that tool directly with the real arguments you intend — you do not need to ask the user for permission yourself; a separate confirmation step outside your control handles that. Never invent an account ID, product ID, quote ID, quote line ID, or price — only use values you got from a tool result.`;
 
@@ -125,6 +129,9 @@ function display(value: unknown): string {
   return typeof value === "string" || typeof value === "number" ? String(value) : "Not specified";
 }
 
+/** Values read earlier in the turn, so a confirmation can show what will change. */
+type CurrentValues = { lineQuantity: Map<string, number>; lineDiscount: Map<string, number>; productPrice: Map<string, number> };
+
 async function confirmationFor(
   client: Client,
   toolName: string,
@@ -132,7 +139,8 @@ async function confirmationFor(
   accountNames: Map<string, string>,
   quoteNumbers: Map<string, string>,
   productNames: Map<string, string>,
-  lineLabels: Map<string, string> = new Map()
+  lineLabels: Map<string, string> = new Map(),
+  current: CurrentValues = { lineQuantity: new Map(), lineDiscount: new Map(), productPrice: new Map() }
 ): Promise<PendingConfirmation> {
   const pendingArgs = { ...args };
   delete pendingArgs.confirmedByUser;
@@ -158,13 +166,23 @@ async function confirmationFor(
       return { toolName, args, summary: { title: "Ready to add quote line", lines: [`Quote: ${quote()}`, `Product: ${product()}`, `Quantity: ${display(args.quantity)}`], confirmLabel: "Add line item", cancelLabel: "Cancel" } };
     case "remove_quote_line":
       return { toolName, args, summary: { title: "Ready to remove quote line", lines: [`Quote line: ${lineLabels.get(String(args.quoteLineId)) ?? display(args.quoteLineId)}`], confirmLabel: "Remove line item", cancelLabel: "Cancel" } };
-    case "update_quote_line":
-      return { toolName, args, summary: { title: "Ready to update quote line quantity", lines: [`Quote line: ${lineLabels.get(String(args.quoteLineId)) ?? display(args.quoteLineId)}`, `New quantity: ${display(args.quantity)}`], confirmLabel: "Update quantity", cancelLabel: "Cancel" } };
-    case "apply_discount":
-      return { toolName, args, summary: { title: "Ready to apply discount", lines: [`Quote: ${quote()}`, `Quote line: ${lineLabels.get(String(args.quoteLineId)) ?? display(args.quoteLineId)}`, `Discount: ${display(args.discountPercent)}%`], confirmLabel: "Apply discount", cancelLabel: "Cancel", ...(evaluateDiscount(args.discountPercent as number).decision === "approval_required" ? { requiresApproverName: true } : {}) } };
+    case "update_quote_line": {
+      const was = current.lineQuantity.get(String(args.quoteLineId));
+      const same = was !== undefined && was === args.quantity;
+      return { toolName, args, summary: { title: same ? `No change needed: the quantity is already ${was}` : "Ready to update quote line quantity", lines: [`Quote line: ${lineLabels.get(String(args.quoteLineId)) ?? display(args.quoteLineId)}`, was !== undefined ? `Quantity: ${was} → ${display(args.quantity)}` : `New quantity: ${display(args.quantity)}`], confirmLabel: "Update quantity", cancelLabel: "Cancel" } };
+    }
+    case "apply_discount": {
+      const was = current.lineDiscount.get(String(args.quoteLineId));
+      const same = was !== undefined && was === args.discountPercent;
+      return { toolName, args, summary: { title: same ? `No change needed: the discount is already ${was}%` : "Ready to apply discount", lines: [`Quote: ${quote()}`, `Quote line: ${lineLabels.get(String(args.quoteLineId)) ?? display(args.quoteLineId)}`, was !== undefined ? `Discount: ${was}% → ${display(args.discountPercent)}%` : `Discount: ${display(args.discountPercent)}%`], confirmLabel: "Apply discount", cancelLabel: "Cancel", ...(evaluateDiscount(args.discountPercent as number).decision === "approval_required" ? { requiresApproverName: true } : {}) } };
+    }
     case "create_product": return { toolName, args, summary: { title: "Ready to create product", lines: [`Name: ${display(args.name)}`, `Family: ${display(args.family)}`, `Type: ${display(args.type)}`], confirmLabel: "Create product", cancelLabel: "Cancel" } };
     case "update_product": return { toolName, args, summary: { title: "Ready to update product", lines: [`Product: ${display(args.productId)}`, `Name: ${display(args.name)}`], confirmLabel: "Update product", cancelLabel: "Cancel" } };
-    case "set_product_price": return { toolName, args, summary: { title: "Ready to set product price", lines: [`Product: ${product()}`, `Unit price: ${display(args.unitPrice)}`], confirmLabel: "Set price", cancelLabel: "Cancel" } };
+    case "set_product_price": {
+      const was = current.productPrice.get(String(args.productId));
+      const same = was !== undefined && was === args.unitPrice;
+      return { toolName, args, summary: { title: same ? `No change needed: ${product()} is already ${was}` : "Ready to set product price", lines: [`Product: ${product()}`, was !== undefined ? `Price: ${was} → ${display(args.unitPrice)}` : `Unit price: ${display(args.unitPrice)}`], confirmLabel: "Set price", cancelLabel: "Cancel" } };
+    }
     case "add_bundle_component": return { toolName, args, summary: { title: "Ready to add bundle component", lines: [`Bundle: ${productNames.get(String(args.parentProductId)) ?? display(args.parentProductId)}`, `Component: ${productNames.get(String(args.childProductId)) ?? display(args.childProductId)}`, `Quantity: ${display(args.quantity)}`], confirmLabel: "Add component", cancelLabel: "Cancel" } };
     case "remove_bundle_component": return { toolName, args, summary: { title: "Ready to remove bundle component", lines: [`Component record: ${display(args.componentId)}`], confirmLabel: "Remove component", cancelLabel: "Cancel" } };
     case "update_bundle_component": return { toolName, args, summary: { title: "Ready to update bundle component", lines: [`Component record: ${display(args.componentId)}`], confirmLabel: "Update component", cancelLabel: "Cancel" } };
@@ -247,6 +265,13 @@ export async function runAgentTurn(
   const accountNames = new Map<string, string>();
   const quoteNumbers = new Map<string, string>();
   const lineLabels = new Map<string, string>();
+  const current: CurrentValues = { lineQuantity: new Map(), lineDiscount: new Map(), productPrice: new Map() };
+  // Open quotes with lines seen this turn (from list_account_quotes), to catch an ambiguous discount.
+  const openQuotes = new Map<string, { quoteNumber: string; name: string; lines: string[] }>();
+  // Which quote each line is on, and the renewal created this turn (a follow-up quantity change
+  // must be on it, never on another quote).
+  const lineQuote = new Map<string, string>();
+  let renewalQuote: { id: string; number: string } | null = null;
   const productNames = new Map<string, string>();
   const seenIds = new Set<string>();
   let latestText = "";
@@ -260,13 +285,28 @@ export async function runAgentTurn(
       else if (value && typeof value === "object") Object.values(value as Record<string, unknown>).forEach(visit);
     };
     visit(result.data);
-    // list_account_quotes: remember quote numbers, and label each line by its product.
+    // Quote lines from any tool (list_account_quotes, get_quote_line_detail, ...): label them by
+    // product and remember their quantity and discount, for "current -> proposed" on cards.
+    const rememberLine = (line: Record<string, unknown>, quoteId?: unknown) => {
+      if (typeof line.quoteLineId !== "string") return;
+      const owner = typeof quoteId === "string" ? quoteId : typeof line.quoteId === "string" ? line.quoteId : undefined;
+      if (owner) lineQuote.set(line.quoteLineId, owner);
+      if (typeof line.productName === "string") {
+        lineLabels.set(line.quoteLineId, typeof line.quantity === "number" ? `${line.productName} × ${line.quantity}` : line.productName);
+      }
+      if (typeof line.quantity === "number") current.lineQuantity.set(line.quoteLineId, line.quantity);
+      current.lineDiscount.set(line.quoteLineId, typeof line.discountPercent === "number" ? line.discountPercent : 0);
+    };
     if (Array.isArray(result.data)) {
       for (const item of result.data as Array<Record<string, unknown>>) {
-        if (typeof item?.quoteId === "string" && typeof item.quoteNumber === "string") quoteNumbers.set(item.quoteId, item.quoteNumber);
-        for (const line of Array.isArray(item?.lines) ? (item.lines as Array<Record<string, unknown>>) : []) {
-          if (typeof line.quoteLineId === "string" && typeof line.productName === "string") {
-            lineLabels.set(line.quoteLineId, typeof line.quantity === "number" ? `${line.productName} × ${line.quantity}` : line.productName);
+        if (!item || typeof item !== "object") continue;
+        rememberLine(item);
+        if (typeof item.quoteId === "string" && typeof item.quoteNumber === "string") quoteNumbers.set(item.quoteId, item.quoteNumber);
+        const lines = Array.isArray(item.lines) ? (item.lines as Array<Record<string, unknown>>) : null;
+        if (lines) {
+          lines.forEach((line) => rememberLine(line, item.quoteId));
+          if (typeof item.quoteId === "string" && lines.length) {
+            openQuotes.set(item.quoteId, { quoteNumber: String(item.quoteNumber ?? item.quoteId), name: String(item.name ?? ""), lines: lines.map((l) => String(l.productName ?? "line") + (typeof l.quantity === "number" ? ` × ${l.quantity}` : "")) });
           }
         }
       }
@@ -327,6 +367,10 @@ export async function runAgentTurn(
     const blocked = !result.ok && (result.error?.code === "DISCOUNT_REJECTED" || result.error?.code === "CONFIRMATION_REQUIRED");
     trace.push({ tool: input.pending.toolName, badge: "WRITE", durationMs, blocked, summary: resultSummary(input.pending.toolName, result) });
     rememberResult(result);
+    if (input.pending.toolName === "create_renewal_quote" && result.ok) {
+      const created = result.data as { quoteId?: string; quoteNumber?: string };
+      if (created.quoteId) renewalQuote = { id: created.quoteId, number: created.quoteNumber ?? created.quoteId };
+    }
     confirmedMessage = resultMessage(input.pending.toolName, result);
     const confirmedToolCallId = `confirmed-${crypto.randomUUID()}`;
     messages.push({
@@ -350,21 +394,26 @@ export async function runAgentTurn(
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ model: options.model ?? AGENT_RUNTIME_DEFAULTS.model, messages, tools: chatTools, tool_choice: toolChoice, stream: false, max_tokens: 2048 }),
     };
-    const llmRetryDelaysMs = [1000, 2000];
+    // Retry brief failures, including 429 (free models are capped per minute), honouring the
+    // provider's Retry-After up to a few seconds so a turn doesn't stall for long.
+    const llmRetryDelaysMs = options.retryDelaysMs ?? [1500, 4000, 8000];
     let response: Response | undefined;
     for (let attempt = 0; ; attempt += 1) {
       let networkError: unknown;
+      response = undefined;
       try {
         response = await fetch(options.apiUrl ?? AGENT_RUNTIME_DEFAULTS.apiUrl, llmRequestInit);
       } catch (error) {
         networkError = error;
       }
-      const transientStatus = response ? [502, 503, 504].includes(response.status) : false;
+      const transientStatus = response ? [429, 502, 503, 504].includes(response.status) : false;
       if ((!networkError && !transientStatus) || attempt >= llmRetryDelaysMs.length) {
         if (networkError) throw networkError;
         break;
       }
-      await new Promise((resolve) => setTimeout(resolve, llmRetryDelaysMs[attempt]));
+      const retryAfterSeconds = Number(response?.headers.get("retry-after"));
+      const wait = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0 ? Math.min(retryAfterSeconds * 1000, 10000) : llmRetryDelaysMs[attempt]!;
+      await new Promise((resolve) => setTimeout(resolve, wait));
     }
     if (!response) throw new Error("LLM API request failed with no response");
     if (!response.ok) throw new LlmApiError(response.status, (await response.text()).slice(0, 300));
@@ -395,13 +444,34 @@ export async function runAgentTurn(
     if (unavailable) throw new Error(`Tool ${unavailable.function.name} is not available in ${mode} mode`);
 
     const mutation = calls.find((call) => modeMutations.has(call.function.name));
+    // After a renewal, a quantity change belongs on the renewal quote. If the line is on another
+    // quote (the renewal's lines may not be readable yet), stop rather than change the wrong quote.
+    if (mutation?.function.name === "update_quote_line" && renewalQuote) {
+      const target = lineQuote.get(String(mutation.function.arguments.quoteLineId));
+      if (target !== renewalQuote.id) {
+        return {
+          message: combinedMessage(`I couldn't find the line on renewal quote ${renewalQuote.number} yet, so I haven't changed the quantity (the line I found is on a different quote). Ask me to update the quantity on quote ${renewalQuote.number} in a moment.`),
+          trace,
+          pendingConfirmation: null,
+        };
+      }
+    }
+    // A discount that doesn't say which quote, when several could be meant: ask rather than guess.
+    if (mutation?.function.name === "apply_discount" && input.kind === "message" && openQuotes.size > 1) {
+      const said = userMessages.join(" ");
+      const named = [...openQuotes.values()].some((q) => said.includes(q.quoteNumber) || (q.name && said.toLowerCase().includes(q.name.toLowerCase())));
+      if (!named) {
+        const options = [...openQuotes.values()].map((q) => `- ${q.quoteNumber}${q.name ? ` (${q.name})` : ""}: ${q.lines.join(", ")}`).join("\n");
+        return { message: combinedMessage(`Which quote should the discount go on? There are ${openQuotes.size} open quotes with lines:\n${options}\n\nReply with the quote number.`), trace, pendingConfirmation: null };
+      }
+    }
     if (mutation) {
       const mutationArgs = { ...(mutation.function.arguments ?? {}) };
       if (typeof mutationArgs.quoteId === "string") mutationArgs.quoteId = await resolveQuoteId(client, mutationArgs.quoteId, rememberResult);
       if (typeof mutationArgs.sourceQuoteId === "string") mutationArgs.sourceQuoteId = await resolveQuoteId(client, mutationArgs.sourceQuoteId, rememberResult);
       const invalid = unprovenId(mutationArgs);
       if (invalid) return provenanceFailure(invalid);
-      const pending = await confirmationFor(client, mutation.function.name, mutationArgs, accountNames, quoteNumbers, productNames, lineLabels);
+      const pending = await confirmationFor(client, mutation.function.name, mutationArgs, accountNames, quoteNumbers, productNames, lineLabels, current);
       const authorizedIds = new Set(seenIds);
       const rememberAuthorizedArgument = (value: unknown) => {
         if (typeof value === "string" && looksLikeSalesforceId(value)) authorizedIds.add(value);
@@ -426,9 +496,15 @@ export async function runAgentTurn(
       if (call.function.name === "search_products" && result.ok && Array.isArray(result.data)) {
         for (const product of result.data as Array<Record<string, unknown>>) {
           if (typeof product.id === "string" && typeof product.name === "string") productNames.set(product.id, product.name);
+          if (typeof product.id === "string" && typeof product.listPrice === "number") current.productPrice.set(product.id, product.listPrice);
         }
       }
       rememberResult(result);
+      if (call.function.name === "get_quote_line_detail" && result.ok && Array.isArray(result.data) && typeof args.quoteId === "string") {
+        for (const line of result.data as Array<Record<string, unknown>>) {
+          if (typeof line.quoteLineId === "string") lineQuote.set(line.quoteLineId, args.quoteId as string);
+        }
+      }
       if (!call.id) throw new Error(`LLM API tool call ${call.function.name} did not contain an id`);
       messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
     }
