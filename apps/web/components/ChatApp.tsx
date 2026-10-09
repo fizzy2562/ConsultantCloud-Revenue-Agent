@@ -111,9 +111,11 @@ export function ChatApp() {
       });
 
       if (!res.ok) {
+        // A setup problem (503) explains itself; anything else is worth a retry.
+        const reason = res.status === 503 ? ((await res.json().catch(() => null)) as { error?: string } | null)?.error : undefined;
         setMessages((prev) => [
           ...prev,
-          { role: "agent", text: "Something went wrong reaching the agent. Please try again." },
+          { role: "agent", text: reason ?? "Something went wrong reaching the agent. Please try again." },
         ]);
         return;
       }
@@ -179,7 +181,7 @@ export function ChatApp() {
     <>
       <header className="cc-header">
         <div>
-          <img src="/consultantcloud-logo.png" alt="ConsultantCloud" width={124} height={32} />
+          <img src="/consultantcloud-logo.png" alt="Consultant Cloud" width={127} height={32} />
         </div>
         <div>
           <ModeToggle tab={tab} onChange={handleModeChange} />
@@ -197,9 +199,9 @@ export function ChatApp() {
       {tab === "architect" && (
         <div
           style={{
-            background: "#fffbeb",
-            borderBottom: "1px solid #fde68a",
-            color: "#92400e",
+            background: "var(--cc-warn-bg)",
+            borderBottom: "1px solid var(--cc-warn-line)",
+            color: "var(--cc-warn-text)",
             fontSize: "0.8125rem",
             padding: "8px 24px",
             textAlign: "center",

@@ -10,9 +10,10 @@ type Status =
   | { state: "disconnected"; oauthConfigured: boolean; message?: string };
 
 const PANEL: React.CSSProperties = {
-  border: "1px solid rgba(148, 163, 184, 0.35)",
+  border: "1px solid var(--cc-line)",
   borderRadius: 12,
   padding: "1.5rem",
+  background: "#ffffff",
 };
 const PRIMARY: React.CSSProperties = {
   display: "inline-block",
@@ -23,7 +24,7 @@ const PRIMARY: React.CSSProperties = {
   fontWeight: 600,
   fontSize: "0.95rem",
   textDecoration: "none",
-  background: "linear-gradient(135deg, #0176d3, #1b96ff)",
+  background: "var(--cc-grad)",
   color: "#ffffff",
 };
 
@@ -33,7 +34,7 @@ export function ConnectionPanel() {
   useEffect(() => setError(new URLSearchParams(window.location.search).get("error")), []);
   return (
     <div style={{ display: "grid", gap: "1.25rem", maxWidth: 560, margin: "0 auto" }}>
-      {error && <p style={{ fontSize: "0.85rem", color: "#b91c1c", margin: 0 }}>Sign-in failed: {error}</p>}
+      {error && <p style={{ fontSize: "0.85rem", color: "var(--cc-danger-text)", margin: 0 }}>Sign-in failed: {error}</p>}
       <ConnectionCard target="revenue" title="Revenue Cloud org" blurb="The org the agent quotes, prices and configures against." />
       <ConnectionCard target="cpq" title="CPQ source org" blurb="The legacy Salesforce CPQ org the migration report inspects." />
     </div>
@@ -81,7 +82,12 @@ function ConnectionCard({ target, title, blurb }: { target: Target; title: strin
           <dd style={{ margin: 0 }}>{status.instanceUrl}</dd>
         </dl>
         <p style={{ fontSize: "0.85rem", opacity: 0.8 }}>{blurb}</p>
-        <button type="button" style={{ ...PRIMARY, background: "#64748b" }} onClick={signOut} disabled={busy}>
+        <button
+          type="button"
+          style={{ ...PRIMARY, background: "#ffffff", color: "var(--cc-ink)", border: "1px solid var(--cc-control)", fontWeight: 500 }}
+          onClick={signOut}
+          disabled={busy}
+        >
           Sign out
         </button>
       </div>
@@ -92,13 +98,13 @@ function ConnectionCard({ target, title, blurb }: { target: Target; title: strin
     <div style={PANEL}>
       <h2 style={{ marginTop: 0 }}>{title}</h2>
       <p style={{ fontSize: "0.9rem", opacity: 0.85 }}>{blurb} You&apos;ll log in on Salesforce and come straight back.</p>
-      {status.message && <p style={{ fontSize: "0.85rem", color: "#b91c1c" }}>{status.message}</p>}
+      {status.message && <p style={{ fontSize: "0.85rem", color: "var(--cc-danger-text)" }}>{status.message}</p>}
       {status.oauthConfigured ? (
         <a href={`/api/auth/login?target=${target}`} style={PRIMARY}>
           Sign in with Salesforce
         </a>
       ) : (
-        <p style={{ fontSize: "0.85rem", color: "#b45309" }}>OAuth isn&apos;t configured for this connection on this deployment.</p>
+        <p style={{ fontSize: "0.85rem", color: "var(--cc-warn-text)" }}>OAuth isn&apos;t configured for this connection on this deployment.</p>
       )}
     </div>
   );

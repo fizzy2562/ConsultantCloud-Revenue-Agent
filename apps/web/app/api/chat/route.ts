@@ -24,6 +24,13 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid request" }, { status: 400 });
   }
 
+  if (!process.env.LLM_API_KEY) {
+    return Response.json(
+      { error: "No AI model is configured. Set LLM_API_KEY in apps/web/.env (an OpenRouter key works; see the README), then restart the app." },
+      { status: 503 }
+    );
+  }
+
   try {
     // Per request: the signed-in user's session, else the deployment's env token where allowed,
     // else the demo data.

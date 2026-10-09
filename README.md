@@ -30,6 +30,12 @@ until you confirm. Discount limits and approvals are enforced by code, not by th
   It is assembled by rules, not by an LLM: see
   [an example report](docs/cpq-to-revenue-cloud-migration-report.md).
 
+| Inspect a bundle in a live Revenue Cloud org | Run the CPQ migration report on a live CPQ org |
+|---|---|
+| ![Asking Architect mode for the Laptop Pro Bundle's structure](docs/media/architect-bundle.gif) | ![Generating the CPQ to Revenue Cloud migration report](docs/media/cpq-migration-report.gif) |
+
+Both recordings are against real Salesforce orgs. Waits for the model and the org are sped up.
+
 **Where you can use it**
 - **The web app** (`apps/web`), with Salesforce OAuth sign-in for your Revenue Cloud and CPQ orgs.
 - **Slack:** `/quickpick` opens a quote and configures its bundles step by step, without leaving
@@ -44,21 +50,28 @@ until you confirm. Discount limits and approvals are enforced by code, not by th
 No Salesforce org is needed: without one, the app uses built-in demo data (Acme University and
 Greenfield Health, both fictional).
 
+You need Node 22 or later, pnpm (`corepack enable` installs the pinned version) and an API key for
+an OpenAI-compatible model: [OpenRouter](https://openrouter.ai/keys) is the default.
+
 ```bash
+git clone https://github.com/fizzy2562/ConsultantCloud-Revenue-Agent.git
+cd ConsultantCloud-Revenue-Agent
 pnpm install
 cp .env.example apps/web/.env      # then set LLM_API_KEY (an OpenRouter key works)
 pnpm --filter @consultantcloud/web dev
 ```
 
-Open http://localhost:3000 and click one of the starter prompts.
+Open http://localhost:3000 and click one of the starter prompts. On the demo data, try the
+renewal, then a 30% discount (refused) and a 20% one (asks for an approver).
 
 **Model.** Any OpenAI-compatible API works (`LLM_API_URL`, `LLM_MODEL`). The default,
 `deepseek/deepseek-v4-flash-0731` on OpenRouter, handles multi-step tool calling reliably at about
 $0.0003 a call. Small free models tend to stall partway through a plan.
 
-**Your own org.** Sign in on the Connection tab (OAuth, set up in `.env.example`). Locally you can
-use static tokens instead: `SF_INSTANCE_URL` and `SF_ACCESS_TOKEN`. Recreate the demo data with
-`sf apex run --file salesforce/scripts/setup-demo-data.apex --target-org <alias>`.
+**Your own org.** Create an External Client App, add its consumer key to `.env`, and sign in on
+the Connection tab. See [Connect your own org](docs/connect-your-org.md), which also covers the
+CPQ org and the demo records. Locally you can use static tokens instead: `SF_INSTANCE_URL` and
+`SF_ACCESS_TOKEN`.
 
 **Docker:** see [docs/docker.md](docs/docker.md).
 
