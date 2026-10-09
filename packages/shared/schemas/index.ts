@@ -47,6 +47,9 @@ export const AccountAssetSchema = z.object({
   status: z.string().nullable(),
   quoteId: z.string().nullable(),
   quoteLineId: z.string().nullable(),
+  /** The subscription period, where the source knows it (a renewal starts when it ends). */
+  startDate: z.string().nullable().optional(),
+  endDate: z.string().nullable().optional(),
 });
 
 export const AccountAssetsOutputSchema = z.array(AccountAssetSchema);

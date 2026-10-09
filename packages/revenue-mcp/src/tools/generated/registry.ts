@@ -22,6 +22,11 @@ import { getQualificationRulesTool, getQualificationRulesHandler } from "./get_q
 import { getQuoteLineDetailTool, getQuoteLineDetailHandler } from "./get_quote_line_detail";
 import { getRateCardTool, getRateCardHandler } from "./get_rate_card";
 import { getRenewalTermsTool, getRenewalTermsHandler } from "./get_renewal_terms";
+import { listAccountQuotesTool, listAccountQuotesHandler } from "./list_account_quotes";
+import { diagnoseProductTool, diagnoseProductHandler } from "./diagnose_product";
+import { explainPriceTool, explainPriceHandler } from "./explain_price";
+import { customerRevenue360Tool, customerRevenue360Handler } from "./customer_revenue_360";
+import { explainAssetHistoryTool, explainAssetHistoryHandler } from "./explain_asset_history";
 import { getRevenueOrderStatusTool, getRevenueOrderStatusHandler } from "./get_revenue_order_status";
 import { getSubscriptionPricingDetailTool, getSubscriptionPricingDetailHandler } from "./get_subscription_pricing_detail";
 import { listCatalogCategoriesTool, listCatalogCategoriesHandler } from "./list_catalog_categories";
@@ -51,6 +56,9 @@ const pairs: Array<[DraftTool, DraftHandler]> = [
   [getProductSellingModelsTool, getProductSellingModelsHandler], [getQualificationRulesTool, getQualificationRulesHandler],
   [getQuoteLineDetailTool, getQuoteLineDetailHandler], [getRateCardTool, getRateCardHandler],
   [getRenewalTermsTool, getRenewalTermsHandler], [getRevenueOrderStatusTool, getRevenueOrderStatusHandler],
+  [listAccountQuotesTool, listAccountQuotesHandler],
+  [diagnoseProductTool, diagnoseProductHandler], [explainPriceTool, explainPriceHandler],
+  [customerRevenue360Tool, customerRevenue360Handler], [explainAssetHistoryTool, explainAssetHistoryHandler],
   [getSubscriptionPricingDetailTool, getSubscriptionPricingDetailHandler], [listCatalogCategoriesTool, listCatalogCategoriesHandler],
   [listDecisionTablesTool, listDecisionTablesHandler],
   [invokeDecisionTableTool, invokeDecisionTableHandler],

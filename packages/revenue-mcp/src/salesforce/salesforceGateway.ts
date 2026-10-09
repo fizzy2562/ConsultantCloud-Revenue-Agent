@@ -57,9 +57,49 @@ async function invokeFlowAction<T = Record<string, unknown>>(
       if (!result) {
         return { isSuccess: false, outputValues: null };
       }
-      return { isSuccess: result.isSuccess, outputValues: result.outputValues };
+      // The action can run (result.isSuccess) while the flow inside reports failure in its own
+      // outputs (outputValues.isSuccess === false, with errorMessage). Both must hold, or a failed
+      // change would be reported as done.
+      const flowFailed = (result.outputValues as { isSuccess?: unknown } | null)?.isSuccess === false;
+      return { isSuccess: result.isSuccess && !flowFailed, outputValues: result.outputValues };
     })
   );
+}
+
+/**
+ * Ask Revenue Cloud to price a quote, through the Place Quote API with pricing forced and
+ * configuration skipped. Lines added through the quotingAI actions are otherwise left unpriced
+ * (unit price 0). Returns null on success, or Salesforce's error.
+ */
+export async function repriceQuote(conn: Connection, quoteId: string): Promise<string | null> {
+  try {
+    // Patch the quote and each of its lines: patching the quote alone leaves existing lines unpriced.
+    const lines = await conn.query<{ Id: string; Quantity: number }>(`SELECT Id, Quantity FROM QuoteLineItem WHERE QuoteId = '${escapeSoql(quoteId)}'`);
+    const response = await conn.requestPost<{ success?: boolean; responseError?: Array<{ message?: string; errorCode?: string }> }>(
+      "/services/data/v62.0/commerce/quotes/actions/place",
+      {
+        pricingPref: "Force",
+        configurationInput: "Skip",
+        graph: {
+          graphId: "reprice",
+          records: [
+            { referenceId: "refQuote", record: { attributes: { type: "Quote", method: "PATCH", id: quoteId } } },
+            ...lines.records.map((line, index) => ({
+              referenceId: `refLine${index}`,
+              // A patch with no field changes is ignored; restating the quantity makes it a change to price.
+              record: { attributes: { type: "QuoteLineItem", method: "PATCH", id: line.Id }, Quantity: line.Quantity },
+            })),
+          ],
+        },
+      }
+    );
+    if (response?.success !== true) {
+      return response?.responseError?.map((e) => e.message ?? e.errorCode).join("; ") || `Pricing not confirmed: ${JSON.stringify(response).slice(0, 300)}`;
+    }
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
 }
 
 function meta(source: "salesforce" = "salesforce") {
@@ -195,7 +235,9 @@ export class SalesforceRevenueGateway implements RevenueGateway {
         Quantity: number | null;
         Status: string | null;
         Product2: { Name: string } | null;
-      }>(`SELECT Id, Name, Quantity, Status, Product2.Name FROM Asset WHERE Id IN (${idList})`);
+        LifecycleStartDate: string | null;
+        LifecycleEndDate: string | null;
+      }>(`SELECT Id, Name, Quantity, Status, Product2.Name, LifecycleStartDate, LifecycleEndDate FROM Asset WHERE Id IN (${idList})`);
       const data: AccountAsset[] = records.records.map((record) => ({
         id: record.Id,
         productName: record.Product2?.Name ?? null,
@@ -206,6 +248,8 @@ export class SalesforceRevenueGateway implements RevenueGateway {
         // here yet); left null rather than guessed.
         quoteId: null,
         quoteLineId: null,
+        startDate: record.LifecycleStartDate ?? null,
+        endDate: record.LifecycleEndDate ?? null,
       }));
       return { ok: true, data, meta: meta() };
     } catch (err) {
@@ -613,6 +657,8 @@ export class SalesforceRevenueGateway implements RevenueGateway {
           meta: meta(),
         };
       }
+      const pricingError = await repriceQuote(this.conn, input.quoteId);
+      if (pricingError) console.warn(`Quote ${input.quoteId}: line added, but pricing failed: ${pricingError}`);
       return {
         ok: true,
         data: { quoteLineId, quoteId: input.quoteId, productId: input.productId, quantity: input.quantity },
@@ -669,16 +715,39 @@ export class SalesforceRevenueGateway implements RevenueGateway {
         discountPercentage: input.discountPercent,
       });
       if (!isSuccess) {
-        return {
-          ok: false,
-          error: {
-            code: "DISCOUNT_APPLY_FAILED",
-            message: ((outputValues as { errorMessage?: string } | null)?.errorMessage as string) ?? "Failed to apply discount",
-            retryable: false,
-          },
-          meta: meta(),
-        };
+        // The quotingAI discount flow fails in some orgs ("Invalid Apex Context while converting
+        // Apex Object to Json"). Fall back to setting the line's discount directly, reprice, and
+        // report success only if Salesforce then shows the discount on the line.
+        const flowError = ((outputValues as { errorMessage?: string } | null)?.errorMessage as string) ?? "Failed to apply discount";
+        try {
+          await this.conn.sobject("QuoteLineItem").update({ Id: input.quoteLineId, Discount: input.discountPercent });
+          const pricingError = await repriceQuote(this.conn, input.quoteId);
+          const lines = await this.conn.query<{ Discount: number | null }>(
+            `SELECT Discount FROM QuoteLineItem WHERE Id = '${escapeSoql(input.quoteLineId)}'`
+          );
+          if (lines.records[0]?.Discount === input.discountPercent) {
+            if (pricingError) console.warn(`Quote ${input.quoteId}: discount set, but pricing failed: ${pricingError}`);
+            return {
+              ok: true,
+              data: { quoteLineId: input.quoteLineId, appliedDiscountPercent: input.discountPercent },
+              meta: meta(),
+            };
+          }
+          return {
+            ok: false,
+            error: { code: "DISCOUNT_APPLY_FAILED", message: `${flowError}. Setting it on the line directly didn't stick${pricingError ? ` (pricing: ${pricingError})` : ""}.`, retryable: false },
+            meta: meta(),
+          };
+        } catch (fallbackError) {
+          return {
+            ok: false,
+            error: { code: "DISCOUNT_APPLY_FAILED", message: `${flowError}. Setting it on the line directly also failed: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`, retryable: false },
+            meta: meta(),
+          };
+        }
       }
+      const pricingError = await repriceQuote(this.conn, input.quoteId);
+      if (pricingError) console.warn(`Quote ${input.quoteId}: discount applied, but pricing failed: ${pricingError}`);
       return {
         ok: true,
         data: { quoteLineId: input.quoteLineId, appliedDiscountPercent: input.discountPercent },

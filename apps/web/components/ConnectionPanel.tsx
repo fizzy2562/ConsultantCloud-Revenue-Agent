@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { clearModelKey, maskKey, readModelKey, saveModelKey } from "../lib/modelKey";
 
 type Target = "revenue" | "cpq";
 type Identity = { username: string; orgId: string; displayName: string };
@@ -35,8 +36,10 @@ export function ConnectionPanel() {
   return (
     <div style={{ display: "grid", gap: "1.25rem", maxWidth: 560, margin: "0 auto" }}>
       {error && <p style={{ fontSize: "0.85rem", color: "var(--cc-danger-text)", margin: 0 }}>Sign-in failed: {error}</p>}
+      <ModelKeyCard />
       <ConnectionCard target="revenue" title="Revenue Cloud org" blurb="The org the agent quotes, prices and configures against." />
       <ConnectionCard target="cpq" title="CPQ source org" blurb="The legacy Salesforce CPQ org the migration report inspects." />
+      <DemoDataCard />
     </div>
   );
 }
@@ -105,6 +108,157 @@ function ConnectionCard({ target, title, blurb }: { target: Target; title: strin
         </a>
       ) : (
         <p style={{ fontSize: "0.85rem", color: "var(--cc-warn-text)" }}>OAuth isn&apos;t configured for this connection on this deployment.</p>
+      )}
+    </div>
+  );
+}
+
+const FIELD: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  minHeight: 42,
+  padding: "10px 14px",
+  border: "1px solid var(--cc-control)",
+  borderRadius: 8,
+  font: "inherit",
+  color: "var(--cc-ink)",
+  background: "#ffffff",
+};
+
+/** Bring your own key: use the visitor's own model API key instead of the demo's free model. */
+function ModelKeyCard() {
+  const [saved, setSaved] = useState<{ apiKey: string; model: string } | null>(null);
+  const [apiKey, setApiKey] = useState("");
+  const [model, setModel] = useState("");
+  useEffect(() => setSaved(readModelKey()), []);
+
+  if (saved) {
+    return (
+      <div style={PANEL}>
+        <h2 style={{ marginTop: 0 }}>✓ AI model: your own key</h2>
+        <p style={{ fontSize: "0.9rem", opacity: 0.85 }}>
+          Chats use your key ({maskKey(saved.apiKey)}) with {saved.model ? <code>{saved.model}</code> : "the default model"}. It stays in
+          this browser tab only and is forgotten when you close it.
+        </p>
+        <button
+          type="button"
+          style={{ ...PRIMARY, background: "#ffffff", color: "var(--cc-ink)", border: "1px solid var(--cc-control)", fontWeight: 500 }}
+          onClick={() => {
+            clearModelKey();
+            setSaved(null);
+          }}
+        >
+          Remove my key
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={PANEL}>
+      <h2 style={{ marginTop: 0 }}>AI model</h2>
+      <p style={{ fontSize: "0.9rem", opacity: 0.85 }}>
+        Chats use this deployment&apos;s model, which on a public demo is usually a free one with shared daily limits. To use your own{" "}
+        <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" style={{ color: "var(--cc-green-text)" }}>
+          OpenRouter key
+        </a>{" "}
+        instead, add it here. It stays in this browser tab, is sent only with your chat requests, and is never stored on the server.
+      </p>
+      <form
+        style={{ display: "grid", gap: "0.75rem" }}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!apiKey.trim()) return;
+          saveModelKey(apiKey, model);
+          setSaved(readModelKey());
+          setApiKey("");
+        }}
+      >
+        <label style={{ display: "grid", gap: 6, fontSize: "0.875rem", color: "var(--cc-body)" }}>
+          API key
+          <input type="password" autoComplete="off" spellCheck={false} placeholder="sk-or-…" value={apiKey} onChange={(e) => setApiKey(e.target.value)} style={FIELD} />
+        </label>
+        <label style={{ display: "grid", gap: 6, fontSize: "0.875rem", color: "var(--cc-body)" }}>
+          Model (optional)
+          <input type="text" autoComplete="off" spellCheck={false} placeholder="deepseek/deepseek-v4-flash-0731" value={model} onChange={(e) => setModel(e.target.value)} style={FIELD} />
+        </label>
+        <div>
+          <button type="submit" style={PRIMARY} disabled={!apiKey.trim()}>
+            Use my key
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+type DemoStep = { step: string; status: "done" | "already there" | "pending" | "failed"; detail: string };
+const STEP_COLOUR: Record<DemoStep["status"], string> = {
+  done: "var(--cc-green-text)",
+  "already there": "var(--cc-body)",
+  pending: "var(--cc-warn-text)",
+  failed: "var(--cc-danger-text)",
+};
+
+/** Creates the records the User-mode demo needs in the connected Revenue Cloud org. */
+function DemoDataCard() {
+  const [org, setOrg] = useState<{ available: boolean; instanceUrl?: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [steps, setSteps] = useState<DemoStep[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    fetch("/api/demo-data", { cache: "no-store" })
+      .then((response) => response.json())
+      .then(setOrg)
+      .catch(() => setOrg({ available: false }));
+  }, []);
+
+  async function run() {
+    setBusy(true);
+    setError(null);
+    setSteps(null);
+    try {
+      const response = await fetch("/api/demo-data", { method: "POST" });
+      const body = (await response.json()) as { steps?: DemoStep[]; error?: string };
+      if (body.steps) setSteps(body.steps);
+      else setError(body.error ?? "Setup failed.");
+    } catch {
+      setError("Couldn't reach the app. Is it still running?");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={PANEL}>
+      <h2 style={{ marginTop: 0 }}>Demo data</h2>
+      <p style={{ fontSize: "0.9rem", opacity: 0.85 }}>
+        Sets up what the User-mode demo needs in the connected Revenue Cloud org: Acme University and Greenfield Health, the
+        Cloud products with prices Revenue Cloud can quote, Acme&apos;s current Cloud Pro subscription (so there&apos;s something to
+        renew) and an open Acme quote (so there&apos;s something to discount). Safe to run again: it only adds what&apos;s missing.
+      </p>
+      {org && !org.available && (
+        <p style={{ fontSize: "0.85rem", color: "var(--cc-warn-text)" }}>Sign in to a Revenue Cloud org above first. Without one, the app uses its built-in demo data.</p>
+      )}
+      {org?.available && (
+        <>
+          <p style={{ fontSize: "0.85rem", color: "var(--cc-muted)" }}>Org: {org.instanceUrl}</p>
+          <button type="button" style={PRIMARY} onClick={run} disabled={busy}>
+            {busy ? "Setting up… (up to 2 minutes)" : "Set up demo data"}
+          </button>
+        </>
+      )}
+      {error && <p style={{ fontSize: "0.85rem", color: "var(--cc-danger-text)" }}>{error}</p>}
+      {steps && (
+        <ul style={{ listStyle: "none", padding: 0, margin: "1rem 0 0", display: "grid", gap: 8, fontSize: "0.875rem" }}>
+          {steps.map((s) => (
+            <li key={s.step}>
+              <strong style={{ color: STEP_COLOUR[s.status] }}>{s.status === "already there" ? "✓ already there" : s.status === "done" ? "✓ done" : s.status === "pending" ? "… pending" : "✗ failed"}</strong>{" "}
+              {s.step}
+              <div style={{ color: "var(--cc-muted)", overflowWrap: "anywhere" }}>{s.detail}</div>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

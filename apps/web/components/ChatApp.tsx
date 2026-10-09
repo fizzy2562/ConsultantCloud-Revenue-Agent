@@ -7,6 +7,7 @@ import { ConfirmationCard } from "./ConfirmationCard";
 import { ToolTracePanel } from "./ToolTracePanel";
 import { ModeToggle, type Mode, type Tab } from "./ModeToggle";
 import { ConnectionPanel } from "./ConnectionPanel";
+import { modelKeyHeaders } from "../lib/modelKey";
 import { ArchitectDashboard } from "./ArchitectDashboard";
 import { CpqMigrationReportModal } from "./CpqMigrationReportModal";
 
@@ -106,13 +107,13 @@ export function ChatApp() {
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...modelKeyHeaders() },
         body: JSON.stringify({ ...body, conversationId }),
       });
 
       if (!res.ok) {
-        // A setup problem (503) explains itself; anything else is worth a retry.
-        const reason = res.status === 503 ? ((await res.json().catch(() => null)) as { error?: string } | null)?.error : undefined;
+        // The route explains problems a person can fix (setup, limits, a rejected key).
+        const reason = ((await res.json().catch(() => null)) as { error?: string } | null)?.error;
         setMessages((prev) => [
           ...prev,
           { role: "agent", text: reason ?? "Something went wrong reaching the agent. Please try again." },
