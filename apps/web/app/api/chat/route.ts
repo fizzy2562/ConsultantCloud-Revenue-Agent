@@ -13,10 +13,11 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  const input = body as { kind?: unknown; conversationId?: unknown; mode?: unknown };
+  const input = body as { kind?: unknown; conversationId?: unknown; mode?: unknown; history?: unknown };
   if (
     typeof input.conversationId !== "string" ||
     typeof input.kind !== "string" ||
+    !Array.isArray(input.history) ||
     (input.kind !== "message" && input.kind !== "confirm" && input.kind !== "cancel") ||
     (input.mode !== undefined && input.mode !== "user" && input.mode !== "architect")
   ) {

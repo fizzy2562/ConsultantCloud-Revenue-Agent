@@ -1,78 +1,127 @@
 # ConsultantCloud Revenue Agent
 
-An open-source experiment in making Salesforce Agentforce Revenue Management available through a governed, headless agent experience.
+[![CI](https://github.com/fizzy2562/ConsultantCloud-Revenue-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/fizzy2562/ConsultantCloud-Revenue-Agent/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-The project combines a TypeScript Revenue Management MCP server (calling real Salesforce Agentforce Revenue Management flow actions), a custom live agent that reasons over it, a custom web client, deterministic pricing guardrails, human confirmation and an evaluation harness. It does not use Salesforce's own Agentforce Studio agent builder — the live agent here is fully custom.
+**An open-source agent for Salesforce Agentforce Revenue Management (Revenue Cloud).** Ask for a
+renewal, a quote or a discount in plain English. The agent works out the steps and reads what it
+needs from Salesforce. It then shows you exactly what it's about to change, and changes nothing
+until you confirm. Discount limits and approvals are enforced by code, not by the prompt.
 
-It is an independent open-source project and is not affiliated with or endorsed by Salesforce.
+![Landing page](docs/screenshots/01-landing.png)
 
-> Revenue work, without the paperwork.
+> Independent open-source project. Not affiliated with or endorsed by Salesforce.
 
-## Status
+## What it does
 
-This repo is a complete, working build of the plan in `PROJECT_SPEC.md`, including a genuine live agent — not just the deterministic tool layer beneath it. See `docs/tickets/` for a ticket-by-ticket account of what was built, how, and what was found along the way, including two independent review rounds and every defect they turned up — this is meant to be a credible account of the process, not a highlight reel.
+**For sellers (User mode)**
+- Renewals, new quotes, amendments, quantity and term changes, from one sentence.
+- A confirmation card for every change, listing the exact account, products and terms.
+- Discount guardrails: up to 15% goes through, 15–25% needs a named approver, and over 25% is
+  refused. All three are enforced in `packages/policy`, whatever the model says.
+- A live trace of every tool call, which you can download as an audit record.
 
-- **A real live agent** (`packages/agent-runtime`): connects to the real MCP server in-process, discovers its tool schemas at runtime, and reasons over them with OpenRouter's hosted `liquid/lfm-2.5-2.6b:free` model. The headless UI (`apps/web`) calls it over a real API route — nothing in the running app is scripted. The confirmation gate is structural, not model-trusted: the runtime, not the model, decides whether a mutation actually executes, and itself controls `confirmedByUser`/`idempotencyKey` regardless of what the model puts in a tool call.
-- **Shared contracts, policy engine, MCP server (5 read + 4 mutation tools), telemetry, headless UI**: built, tested, all passing — 54 tests across the workspace, `pnpm -r build` succeeds clean.
-- **Real Salesforce integration** (`SalesforceRevenueGateway`): built and live-smoke-tested — account lookup, product search, and quote/opportunity creation work end to end against a real org. The app wires the mock gateway by default for the live agent demo; swapping in the real one is a one-line constructor change. **Known gap**: Salesforce's own RLM "ProductDiscovery Service" hasn't indexed this demo's newly-created products, so adding a quote line item isn't demoable against live Salesforce yet — fully demoable against the mock gateway today.
-- **Evaluation harness**: 10 scenarios from `PROJECT_SPEC.md` Section 12; 9 pass deterministically, 1 (verifying agent clarification-seeking behavior) is honestly skipped rather than faked — it needs a live, non-deterministic model in the loop, which doesn't belong in a fast deterministic suite. See `evals/results/latest.json`.
-- **Red team pass**: zero critical findings across injection, type-confusion, numeric edge-case, real-concurrency, and missing-field probes. See `docs/tickets/ticket-009-red-team.md`.
-- **Two independent review rounds** (codex, run separately from the model that built the code) found and fixed real defects across every layer — a caller-controlled confirmation boolean, an idempotency race, output fabrication in the Salesforce gateway, a UI trace that could show a write as complete before confirmation, and more. See `docs/tickets/ticket-011` through `ticket-017`.
-- **Honestly-disclosed, deliberately out-of-scope gaps**: `approvedBy` (required for the manager-approval discount band) is a recorded name, not a verified identity — this project has no real authentication, and faking identity verification would violate its own never-fabricate principle. P1/P2 items from `PROJECT_SPEC.md` (amendment quotes, multi-currency, Data 360 grounding, a hosted sandbox demo) remain unstarted — explicitly deferred by the spec itself as later-phase scope.
+| Confirm before anything changes | Over the limit: refused | In the approval band |
+|---|---|---|
+| ![Renewal confirmation](docs/screenshots/02-renewal-confirmation.png) | ![Discount rejected](docs/screenshots/04-discount-rejected.png) | ![Approval required](docs/screenshots/05-discount-approval-required.png) |
 
-## How this was built
+**For architects (Architect mode)**
+- Catalog work by chat: find and create products, set prices, inspect and change bundle structure.
+- **CPQ → Revenue Cloud migration report.** It connects read-only to a Salesforce CPQ org and runs
+  13 inspectors: price and product rules, discount schedules, QCP scripts, twin fields, the catalog,
+  the installed base, selling models, usage, automation, integrations and reporting. The result is a
+  migration assessment you can export as a PDF, with a blast radius and a testing and cutover plan.
+  It is assembled by rules, not by an LLM: see
+  [an example report](docs/cpq-to-revenue-cloud-migration-report.md).
 
-Every line of application code (everything under `apps/`, `packages/`, `evals/`) was written by two different models, never by the orchestrating Claude Code session directly: a local Qwen 3.8 (27B) model running via Ollama (dispatched ticket-by-ticket through `scripts/qwen.mjs`) wrote the original P0 build and several later fixes; codex (via the Codex CLI) wrote the live agent runtime, two independent review rounds, and the fix passes those reviews produced. The live runtime now uses OpenRouter's hosted Liquid model.
+**Where you can use it**
+- **The web app** (`apps/web`), with Salesforce OAuth sign-in for your Revenue Cloud and CPQ orgs.
+- **Slack:** `/quickpick` opens a quote and configures its bundles step by step, without leaving
+  Slack.
+- **Agentforce:** the same 46 tools as Agentforce actions, through a REST bridge
+  ([setup](docs/agentforce-setup.md)), and a Quote Assistant chat component for Lightning record
+  pages ([setup](docs/quote-assistant-lightning.md)).
+- **Any MCP client:** `packages/revenue-mcp` is a standalone MCP server.
 
-The orchestrator's role throughout was ticket specification, independent code review, defect correction (re-dispatching real logic bugs back to a model; only ever hand-fixing mechanical, type-system-forced issues — a dropped file extension, a type-narrowing cast — directly), and integration. `docs/tickets/` records this honestly, including several real defects each model produced and how they were caught.
+## Try it in five minutes
 
-## Architecture
-
-```
-apps/web              ConsultantCloud-branded headless chat + trace UI (Next.js), calls the live agent via /api/chat
-packages/agent-runtime The live agent: connects to the real MCP server, reasons over its tools via OpenRouter's hosted API
-packages/shared        Zod schemas, TS types, RevenueGateway interface, MockRevenueGateway
-packages/policy        Discount policy, protected-mutation confirmation, idempotency store
-packages/revenue-mcp   MCP server: 5 read tools + 4 mutation tools, real Salesforce gateway
-packages/telemetry     Event schema, structured logger, metrics rollup
-evals                  10 PROJECT_SPEC scenarios (E01-E10) run against the real MCP server
-salesforce             Demo data setup script (Apex)
-docs                   Architecture record, ticket-by-ticket build log
-```
-
-The rule this project is built around: **the LLM decides what should happen; deterministic services decide whether it's allowed.** Discount thresholds, protected-mutation rules, and idempotency all live in `packages/policy` as data and pure functions — never in a prompt. The same rule governs the live agent itself: `packages/agent-runtime` decides whether a mutation the model requested actually executes — never the model.
-
-## Setup
+No Salesforce org is needed: without one, the app uses built-in demo data (Acme University and
+Greenfield Health, both fictional).
 
 ```bash
 pnpm install
-pnpm -r build
-pnpm -r test
-```
-
-The live agent uses OpenRouter's OpenAI-compatible chat completions API. Set `LLM_API_KEY`; the endpoint defaults to `https://openrouter.ai/api/v1/chat/completions` and the model defaults to `liquid/lfm-2.5-2.6b:free`. Override them with `LLM_API_URL` and `LLM_MODEL` when needed.
-
-For the headless UI (with `LLM_API_KEY` set):
-
-```bash
+cp .env.example apps/web/.env      # then set LLM_API_KEY (an OpenRouter key works)
 pnpm --filter @consultantcloud/web dev
 ```
 
-For the evaluation suite (deterministic, no hosted LLM required — it talks to the MCP server directly):
+Open http://localhost:3000 and click one of the starter prompts.
 
-```bash
-cd evals && npx tsx runner.ts
+**Model.** Any OpenAI-compatible API works (`LLM_API_URL`, `LLM_MODEL`). The default,
+`deepseek/deepseek-v4-flash-0731` on OpenRouter, handles multi-step tool calling reliably at about
+$0.0003 a call. Small free models tend to stall partway through a plan.
+
+**Your own org.** Sign in on the Connection tab (OAuth, set up in `.env.example`). Locally you can
+use static tokens instead: `SF_INSTANCE_URL` and `SF_ACCESS_TOKEN`. Recreate the demo data with
+`sf apex run --file salesforce/scripts/setup-demo-data.apex --target-org <alias>`.
+
+**Docker:** see [docs/docker.md](docs/docker.md).
+
+## How it's built
+
+```
+apps/web                      Next.js app: chat, trace, Architect mode, OAuth, Slack, REST bridge
+packages/agent-runtime        The live agent: discovers the MCP tools, plans with the LLM, gates changes
+packages/revenue-mcp          MCP server: 46 tools over a Salesforce gateway, or a mock gateway
+packages/policy               Discount bands, confirmation rules, idempotency, retries, circuit breaker
+packages/shared               Zod schemas, types, the gateway interface and the mock gateway
+packages/cpq-analysis         CPQ inspectors and the rules-based migration report
+packages/telemetry            Structured event log and metrics
+packages/quickpick-*          Bundle configuration for Slack (vendored from revenue-picker)
+evals                         Scenario suite run against the real MCP server
+force-app                     Agentforce agent bundles, and the Quote Assistant LWC and Apex
 ```
 
-Real Salesforce integration requires `SF_INSTANCE_URL` and `SF_ACCESS_TOKEN` in a `.env` file (see `.env.example`) — never commit real values. Demo data can be (re-)created idempotently via `sf apex run --file salesforce/scripts/setup-demo-data.apex --target-org <alias>`.
+**The rule it's built on: the model decides what should happen; deterministic code decides whether
+it's allowed.**
+- The runtime, not the model, decides whether a change runs. It sets `confirmedByUser` and the
+  idempotency key itself, whatever the model puts in a tool call.
+- Every ID in a change has to come from an earlier tool result in the same run, so the model
+  can't invent an account or a product.
+- Discount bands are data in `packages/policy`, never prompt text.
 
-## Demo accounts
+**Quality.**
+- **CI** runs the build, 200+ unit tests, the eval suite, `pnpm audit` and a gitleaks secrets scan
+  on every push.
+- **Evals:** the scenarios are in `evals/cases/scenarios.ts`. One is skipped, honestly, because
+  it needs a live model.
+- **Reviews:** a red-team pass, and two independent code reviews whose findings were all fixed.
+  See [docs/tickets](docs/tickets) for the full build log, defects included.
+- **Security:** see [docs/security.md](docs/security.md).
 
-Fictional, for demo purposes only:
+## How this was built
 
-- **Acme University** — Education, 100 existing Cloud Pro seats, 12% discount, renewal scenario
-- **Greenfield Health** — Healthcare, new customer, initial-quote scenario
+The application code was written by AI models working ticket by ticket from
+[the spec](docs/PROJECT_SPEC.md):
+- a local Qwen model built the first version;
+- Codex built the live agent runtime and ran the independent reviews;
+- Claude Code wrote the specs, reviewed the code and integrated it.
+
+[docs/tickets](docs/tickets) records what each one built, and the defects each one introduced and
+how they were caught.
+
+## Known limits
+
+- `approvedBy` for the approval band is a recorded name, not a verified identity.
+- On a real org, adding quote lines depends on Salesforce's product discovery index having picked
+  up new products.
+- Production use needs a dedicated integration user with JWT Bearer or Client Credentials, not a
+  user's session. See [docs/security.md](docs/security.md).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Please report security issues privately: see
+[SECURITY.md](SECURITY.md).
 
 ## License
 
-See `LICENSE`.
+[MIT](LICENSE)

@@ -59,7 +59,7 @@ type ChatMessage = {
 
 export const AGENT_RUNTIME_DEFAULTS = {
   apiUrl: "https://openrouter.ai/api/v1/chat/completions",
-  model: "liquid/lfm-2.5-2.6b:free",
+  model: "deepseek/deepseek-v4-flash-0731",
   toolLoopLimit: 4,
   confirmationRequired: true,
 } as const;

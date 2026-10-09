@@ -15,8 +15,10 @@ Status against PROJECT_SPEC.md Section 13's checklist, as of this build:
 | Deterministic policy engine | ✅ `packages/policy` — discount thresholds and protected-mutation rules are data/pure functions, never in a prompt. |
 | Confirmation token for writes | ✅ `confirmedByUser: true` required and checked before any protected mutation reaches the gateway; verified type confusion (string `"true"`) is rejected, not coerced. |
 | Secrets scanning in CI | ✅ `.github/workflows/ci.yml` runs gitleaks on every push/PR to `main`, alongside build/test/evals/`pnpm audit`. |
-| Dependency audit | ✅ `pnpm audit` run — found 1 critical, 1 high, 3 moderate, all in `vitest`'s transitive `vite`/`esbuild` (dev/test tooling only, never shipped). Fixed by bumping `vitest` to `^3.2.6` (patches the critical) plus a `vite: '>=6.4.3'` override in `pnpm-workspace.yaml` (patches the rest). `pnpm audit` now reports zero known vulnerabilities. |
+| Dependency audit | ✅ `pnpm audit` runs in CI and reports zero known vulnerabilities. Next.js, the MCP SDK, Vitest and jsforce are kept current; patched versions of transitive dependencies are pinned with `overrides` in `pnpm-workspace.yaml`. |
 | No production customer data | ✅ Demo data (Acme University, Greenfield Health) is entirely fictional. |
+| Session cookies | ✅ Salesforce access and refresh tokens are kept in httpOnly cookies, AES-256-GCM encrypted with a key from `SESSION_SECRET` (required in production). A tampered cookie is rejected. |
+| Hosted deployments | ✅ Visitors who haven't signed in get the demo data, not the deployment's own `SF_*`/`CPQ_*` tokens. A deployer can opt in to sharing the org with `ALLOW_ANONYMOUS_ORG_ACCESS=true`, for a private demo only. The `/api/tools` bridge accepts only its bearer keys, compared in constant time. |
 
 ## Known gap carried from the red team pass
 

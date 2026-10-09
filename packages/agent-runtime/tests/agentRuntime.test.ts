@@ -39,7 +39,7 @@ describe("agent runtime", () => {
     expect(fetchMock.mock.calls[0]![0]).toBe("https://openrouter.ai/api/v1/chat/completions");
     expect(fetchMock.mock.calls[0]![1].headers).toMatchObject({ authorization: "Bearer test-llm-api-key" });
     expect(request).toMatchObject({
-      model: "liquid/lfm-2.5-2.6b:free",
+      model: "deepseek/deepseek-v4-flash-0731",
       tool_choice: "auto",
       stream: false,
       max_tokens: 2048,
