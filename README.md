@@ -8,7 +8,7 @@ renewal, a quote or a discount in plain English. The agent works out the steps a
 needs from Salesforce. It then shows you exactly what it's about to change, and changes nothing
 until you confirm. Discount limits and approvals are enforced by code, not by the prompt.
 
-![Landing page](docs/screenshots/01-landing.png)
+![The app: User mode, with starter prompts, the chat and the tool trace](docs/screenshots/landing.png)
 
 > Independent open-source project. Not affiliated with or endorsed by Salesforce.
 
@@ -20,10 +20,6 @@ until you confirm. Discount limits and approvals are enforced by code, not by th
 - Discount guardrails: up to 15% goes through, 15–25% needs a named approver, and over 25% is
   refused. All three are enforced in `packages/policy`, whatever the model says.
 - A live trace of every tool call, which you can download as an audit record.
-
-| Confirm before anything changes | Over the limit: refused | In the approval band |
-|---|---|---|
-| ![Renewal confirmation](docs/screenshots/02-renewal-confirmation.png) | ![Discount rejected](docs/screenshots/04-discount-rejected.png) | ![Approval required](docs/screenshots/05-discount-approval-required.png) |
 
 **For architects (Architect mode)**
 - Catalog work by chat: find and create products, set prices, inspect and change bundle structure.
