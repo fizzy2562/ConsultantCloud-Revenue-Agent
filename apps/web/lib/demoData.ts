@@ -112,12 +112,17 @@ export async function setUpDemoData(conn: Connection): Promise<StepResult[]> {
   for (const product of PRODUCTS) {
     const step = `Product: ${product.name}`;
     try {
-      let [existing] = await query(conn, `SELECT Id FROM Product2 WHERE Name = '${q(product.name)}' LIMIT 1`);
+      let [existing] = await query<Rec & { ConfigureDuringSale: string | null }>(conn, `SELECT Id, ConfigureDuringSale FROM Product2 WHERE Name = '${q(product.name)}' LIMIT 1`);
       const notes: string[] = [];
       if (!existing) {
-        const created = await conn.sobject("Product2").create({ Name: product.name, IsActive: true, Family: "Software" });
-        existing = { Id: created.id as string };
+        const created = await conn.sobject("Product2").create({ Name: product.name, IsActive: true, Family: "Software", ConfigureDuringSale: "Allowed" });
+        existing = { Id: created.id as string, ConfigureDuringSale: "Allowed" };
         notes.push("created");
+      } else if (!existing.ConfigureDuringSale) {
+        // In cc-revenue-org every product that prices has Configure During Sale set, and every
+        // zero-priced line came from a product where it was blank.
+        await conn.sobject("Product2").update({ Id: existing.Id, ConfigureDuringSale: "Allowed" });
+        notes.push("Configure During Sale set");
       }
       productIds.set(product.name, existing.Id);
       if (sellingModelId && pricebookId) {
@@ -126,16 +131,17 @@ export async function setUpDemoData(conn: Connection): Promise<StepResult[]> {
           await conn.sobject("ProductSellingModelOption").create({ Product2Id: existing.Id, ProductSellingModelId: sellingModelId });
           notes.push("selling model added");
         }
-        const [plain] = await query(conn, `SELECT Id FROM PricebookEntry WHERE Product2Id = '${existing.Id}' AND Pricebook2Id = '${pricebookId}' AND ProductSellingModelId = null LIMIT 1`);
-        if (!plain) {
-          await conn.sobject("PricebookEntry").create({ Pricebook2Id: pricebookId, Product2Id: existing.Id, UnitPrice: product.price, IsActive: true });
-          notes.push("standard price added");
-        }
         const [entry] = await query(conn, `SELECT Id FROM PricebookEntry WHERE Product2Id = '${existing.Id}' AND Pricebook2Id = '${pricebookId}' AND ProductSellingModelId = '${sellingModelId}' LIMIT 1`);
         if (!entry) {
           await conn.sobject("PricebookEntry").create({ Pricebook2Id: pricebookId, Product2Id: existing.Id, ProductSellingModelId: sellingModelId, UnitPrice: product.price, IsActive: true });
           notes.push(`${SELLING_MODEL} price added`);
         }
+        // Products that price correctly in Revenue Cloud have only selling-model entries; an
+        // active standard entry without a selling model makes pricing return 0. Deactivate it
+        // (not delete, so it's easy to undo).
+        const strays = await query(conn, `SELECT Id FROM PricebookEntry WHERE Product2Id = '${existing.Id}' AND Pricebook2Id = '${pricebookId}' AND ProductSellingModelId = null AND IsActive = true`);
+        for (const stray of strays) await conn.sobject("PricebookEntry").update({ Id: stray.Id, IsActive: false });
+        if (strays.length) notes.push("price entry without a selling model deactivated");
       }
       record(step, notes.length ? "done" : "already there", notes.join(", ") || "ready to quote");
     } catch (error) {
@@ -277,8 +283,24 @@ export async function setUpDemoData(conn: Connection): Promise<StepResult[]> {
       conn,
       `SELECT Id, Name FROM Quote WHERE AccountId = '${acmeId}' AND Name = '${q(OPEN_QUOTE_NAME)}' AND Id IN (SELECT QuoteId FROM QuoteLineItem WHERE Product2Id = '${cloudProId}') LIMIT 1`
     );
-    if (open) record("Acme: open quote with a Cloud Pro line", "already there", open.Id);
-    else record("Acme: open quote with a Cloud Pro line", "done", await quoteWithLine(OPEN_QUOTE_NAME, SUBSCRIPTION_SEATS));
+    if (!open) {
+      record("Acme: open quote with a Cloud Pro line", "done", await quoteWithLine(OPEN_QUOTE_NAME, SUBSCRIPTION_SEATS));
+    } else {
+      // A line added before the products were set up correctly keeps a unit price of 0; replace
+      // it with a fresh line, which Revenue Cloud prices.
+      const unpriced = await query<Rec & { Quantity: number }>(
+        conn,
+        `SELECT Id, Quantity FROM QuoteLineItem WHERE QuoteId = '${open.Id}' AND Product2Id = '${cloudProId}' AND ListPrice > 0 AND (UnitPrice = 0 OR UnitPrice = null)`
+      );
+      if (unpriced.length === 0) {
+        record("Acme: open quote with a Cloud Pro line", "already there", open.Id);
+      } else {
+        for (const line of unpriced) await conn.sobject("QuoteLineItem").destroy(line.Id);
+        await flow(conn, "quotingAI__addQuoteLineItemToQuote", { quoteId: open.Id, productId: cloudProId, quantity: unpriced[0]!.Quantity ?? SUBSCRIPTION_SEATS, productSellingModelID: sellingModelId });
+        const pricingError = await repriceQuote(conn, open.Id);
+        record("Acme: open quote with a Cloud Pro line", "done", `replaced an unpriced Cloud Pro line on ${open.Id}${pricingError ? ` (pricing: ${pricingError})` : ""}`);
+      }
+    }
   } catch (error) {
     record("Acme: open quote with a Cloud Pro line", "failed", message(error));
   }
