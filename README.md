@@ -14,6 +14,12 @@ until you confirm. Discount limits and approvals are enforced by code, not by th
 
 ## What it does
 
+| Renew and change seats, each change confirmed | Discount guardrails: 30% refused, 20% approved | Ask why a price is what it is |
+|---|---|---|
+| ![Renewing Acme for 3 years and increasing Cloud Pro to 250 seats](docs/media/chat-renewal.gif) | ![A 30% discount blocked by policy, then 20% applied with an approver](docs/media/chat-guardrails.gif) | ![Explaining the price waterfall of a quote line](docs/media/chat-why.gif) |
+
+Recorded against a live Revenue Cloud org on a free model. Waits for the model are sped up.
+
 **For sellers (User mode)**
 - Renewals, new quotes, amendments, quantity and term changes, from one sentence.
 - A confirmation card for every change, listing the exact account, products and terms.
