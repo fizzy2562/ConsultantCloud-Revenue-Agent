@@ -1,6 +1,6 @@
 import { cpqInspectors } from "@consultantcloud/cpq-analysis";
 import { Connection } from "jsforce";
-import { readStoredSession, refreshSalesforceSession } from "../../../../lib/salesforceSession";
+import { envCredentialsAllowed, readStoredSession, refreshSalesforceSession } from "../../../../lib/salesforceSession";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -15,7 +15,7 @@ function failedInspector(error: unknown) {
 
 /**
  * Credentials for the CPQ source org: the signed-in OAuth session first (refreshed if it has
- * expired), then the static CPQ_* env vars as a fallback. A stale static token is exactly what
+ * expired), then the static CPQ_* env vars where allowed (see envCredentialsAllowed). A stale static token is exactly what
  * produced "INVALID_SESSION_ID: Session expired or invalid" on every inspector.
  */
 async function cpqCredentials(): Promise<{ instanceUrl: string; accessToken: string } | null> {
@@ -29,6 +29,7 @@ async function cpqCredentials(): Promise<{ instanceUrl: string; accessToken: str
     const refreshed = await refreshSalesforceSession(stored, "cpq");
     if (refreshed) return refreshed;
   }
+  if (!envCredentialsAllowed()) return null;
   const instanceUrl = process.env.CPQ_INSTANCE_URL;
   const accessToken = process.env.CPQ_ACCESS_TOKEN;
   return instanceUrl && accessToken ? { instanceUrl, accessToken } : null;

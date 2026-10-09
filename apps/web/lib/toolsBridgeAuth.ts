@@ -1,3 +1,5 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+
 export type ToolsBridgeScope = "revenue" | "catalog";
 
 export function authorizeToolsRequest(request: Request, scope: ToolsBridgeScope = "revenue"): Response | null {
@@ -11,7 +13,9 @@ export function authorizeToolsRequest(request: Request, scope: ToolsBridgeScope 
     );
   }
 
-  if (request.headers.get("authorization") !== `Bearer ${apiKey}`) {
+  // Compare digests in constant time, so response timing can't reveal the key.
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  if (!timingSafeEqual(digest(request.headers.get("authorization") ?? ""), digest(`Bearer ${apiKey}`))) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 

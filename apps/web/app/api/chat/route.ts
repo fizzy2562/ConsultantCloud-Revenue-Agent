@@ -1,5 +1,5 @@
 import { createRevenueGateway } from "@consultantcloud/revenue-mcp";
-import { readSalesforceSession } from "../../../lib/salesforceSession";
+import { envCredentialsAllowed, readSalesforceSession } from "../../../lib/salesforceSession";
 import { runAgentTurn, type RunAgentTurnInput } from "@consultantcloud/agent-runtime";
 
 export const runtime = "nodejs";
@@ -24,8 +24,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Per request: the signed-in user's session takes precedence over the deployment's env token.
-    const gateway = createRevenueGateway((await readSalesforceSession()) ?? undefined);
+    // Per request: the signed-in user's session, else the deployment's env token where allowed,
+    // else the demo data.
+    const gateway = createRevenueGateway((await readSalesforceSession()) ?? undefined, {
+      useEnvironment: envCredentialsAllowed(),
+    });
     const result = await runAgentTurn({ ...(input as unknown as RunAgentTurnInput), mode: input.mode === "architect" ? "architect" : "user" }, gateway, {
       runId: input.conversationId,
       ...(process.env.LLM_API_KEY ? { apiKey: process.env.LLM_API_KEY } : {}),
