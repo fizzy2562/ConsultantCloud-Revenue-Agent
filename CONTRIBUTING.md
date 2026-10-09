@@ -24,7 +24,8 @@ APP_URL=http://localhost:3000 TOOLS_API_KEY=<the app's key> pnpm test:org
 ```
 
 It drives the chat and the tools API and checks the real outcomes in the org, such as a 30%
-discount refused and a 20% one applied, with Salesforce showing the new net price. A pull request needs all of them
+discount refused and a 20% one applied, with Salesforce showing the new net price. The same
+checks run from the app itself: Connection tab › **Run org checks**. A pull request needs all of them
 to pass.
 
 ## The rule to keep
