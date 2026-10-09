@@ -1,10 +1,44 @@
+/*
+ * Consultant Cloud design tokens, from the CC-POC Design System
+ * (kits/consultant-cloud/cc.css), the signed-in look of consultantcloud.io.
+ */
+@font-face { font-family: Inter; src: url("/fonts/inter-latin.woff2") format("woff2"); font-weight: 400 500; font-display: swap; }
+@font-face { font-family: Inter; src: url("/fonts/inter-latin-600.woff2") format("woff2"); font-weight: 600; font-display: swap; }
+@font-face { font-family: Inter; src: url("/fonts/inter-latin-700.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+
 :root {
+  /* Brand */
+  --cc-grad: linear-gradient(93.35deg, #3d7fab 1.25%, #4da68b 16.01%, #51ac52 36.52%);
   --cc-blue: #3d7fab;
   --cc-green: #51ac52;
   --cc-blue-text: #2f6690;
-  --cc-green-text: #2c7a2e;
-  --cc-gradient: linear-gradient(135deg, var(--cc-blue), var(--cc-green));
-  --cc-border: #bdd5e3;
-  --cc-border-strong: #8db8d1;
-  --cc-surface-blue: #f4f8fb;
+  --cc-green-text: #2f7d33;
+
+  /* Text */
+  --cc-ink: #242424;
+  --cc-body: #4f4f4f;
+  --cc-muted: #767676;
+
+  /* Lines and fills */
+  --cc-line: #ececec;
+  --cc-control: #dadada;
+  --cc-fill: #f3f3f3;
+  --cc-page: #f8f8f8;
+
+  /* States */
+  --cc-ok-bg: #edf7ee;
+  --cc-warn-bg: #fdf6e8;
+  --cc-warn-line: #f3e2bf;
+  --cc-warn-text: #8a5712;
+  --cc-danger-bg: #fdeceb;
+  --cc-danger-line: #f1c4c0;
+  --cc-danger-text: #b3261e;
+
+  --cc-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Older names still used by components, mapped onto the tokens above. */
+  --cc-gradient: var(--cc-grad);
+  --cc-border: var(--cc-line);
+  --cc-border-strong: var(--cc-control);
+  --cc-surface-blue: var(--cc-fill);
 }

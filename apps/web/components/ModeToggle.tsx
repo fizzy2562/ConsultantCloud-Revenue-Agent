@@ -33,13 +33,13 @@ export function ModeToggle({ tab, onChange }: ModeToggleProps) {
   };
 
   const activeStyle: React.CSSProperties = {
-    background: "linear-gradient(135deg, #3d7fab, #51ac52)",
+    background: "var(--cc-grad)",
     color: "#ffffff",
   };
 
   const inactiveStyle: React.CSSProperties = {
     background: "transparent",
-    color: "#6b7280",
+    color: "var(--cc-muted)",
   };
 
   const baseButtonStyle: React.CSSProperties = {
@@ -57,7 +57,7 @@ export function ModeToggle({ tab, onChange }: ModeToggleProps) {
       role="tablist"
       aria-label="Mode"
       style={{
-        border: "1px solid #e5e7eb",
+        border: "1px solid var(--cc-line)",
         borderRadius: "9999px",
         background: "#ffffff",
         padding: "4px",

@@ -33,26 +33,26 @@ type ArchitectureSnapshot = {
 };
 
 const FONT_STACK =
-  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
 const CARD_STYLE: React.CSSProperties = {
   background: "#ffffff",
   border: "1px solid var(--cc-border)",
   borderRadius: 12,
   padding: 20,
-  boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
 };
 
 const SECTION_HEADING_STYLE: React.CSSProperties = {
   fontSize: "0.9375rem",
-  fontWeight: 700,
+  fontWeight: 600,
+  color: "var(--cc-ink)",
   marginBottom: 12,
 };
 
-const MUTED_STYLE: React.CSSProperties = { color: "#6b7280" };
+const MUTED_STYLE: React.CSSProperties = { color: "var(--cc-muted)" };
 
 const PILL_BASE: React.CSSProperties = {
-  borderRadius: 9999,
+  borderRadius: 50,
   padding: "2px 10px",
   fontSize: "0.75rem",
   fontWeight: 600,
@@ -60,16 +60,16 @@ const PILL_BASE: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
-const READ_PILL: React.CSSProperties = { ...PILL_BASE, background: "#eff6ff", color: "#2f6690" };
-const WRITE_PILL: React.CSSProperties = { ...PILL_BASE, background: "#fef3c7", color: "#92400e" };
-const STATUS_PILL: React.CSSProperties = { ...PILL_BASE, background: "#f3f4f6", color: "#374151" };
+const READ_PILL: React.CSSProperties = { ...PILL_BASE, background: "var(--cc-fill)", color: "var(--cc-body)" };
+const WRITE_PILL: React.CSSProperties = { ...PILL_BASE, background: "var(--cc-warn-bg)", color: "var(--cc-warn-text)" };
+const STATUS_PILL: React.CSSProperties = { ...PILL_BASE, background: "var(--cc-fill)", color: "var(--cc-ink)" };
 
 const WARNING_BANNER_STYLE: React.CSSProperties = {
-  background: "#fffbeb",
-  border: "1px solid #fde68a",
-  color: "#92400e",
-  borderRadius: 10,
-  padding: "14px 16px",
+  background: "var(--cc-warn-bg)",
+  border: "1px solid var(--cc-warn-line)",
+  color: "var(--cc-warn-text)",
+  borderRadius: 8,
+  padding: "10px 12px",
 };
 
 const GRID_STYLE: React.CSSProperties = {
@@ -84,16 +84,16 @@ const TABLE_STYLE: React.CSSProperties = {
 };
 
 const TH_STYLE: React.CSSProperties = {
-  background: "#f9fafb",
+  background: "var(--cc-fill)",
   fontSize: "0.8125rem",
   padding: "10px 12px",
   textAlign: "left",
-  borderBottom: "1px solid #e5e7eb",
+  borderBottom: "1px solid var(--cc-line)",
 };
 
 const TD_STYLE: React.CSSProperties = {
   padding: "10px 12px",
-  borderBottom: "1px solid #e5e7eb",
+  borderBottom: "1px solid var(--cc-line)",
   verticalAlign: "top",
 };
 
@@ -196,8 +196,8 @@ export function ArchitectDashboard() {
 
   const rootStyle: React.CSSProperties = {
     fontFamily: FONT_STACK,
-    color: "#1f2937",
-    background: "#f7f8fa",
+    color: "var(--cc-ink)",
+    background: "var(--cc-page)",
     minHeight: "100vh",
     padding: 24,
   };
@@ -218,7 +218,7 @@ export function ArchitectDashboard() {
           type="button"
           onClick={load}
           style={{
-            background: "linear-gradient(135deg, #3d7fab, #51ac52)",
+            background: "var(--cc-grad)",
             color: "#ffffff",
             border: "none",
             borderRadius: 8,
@@ -366,7 +366,7 @@ export function ArchitectDashboard() {
                       </tr>
                       {isExpanded && (
                         <tr>
-                          <td colSpan={4} style={{ ...TD_STYLE, background: "#f9fafb" }}>
+                          <td colSpan={4} style={{ ...TD_STYLE, background: "var(--cc-fill)" }}>
                             <div style={{ ...MUTED_STYLE, fontSize: "0.8125rem", marginBottom: 6 }}>
                               Input schema
                             </div>

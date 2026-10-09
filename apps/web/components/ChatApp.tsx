@@ -179,7 +179,7 @@ export function ChatApp() {
     <>
       <header className="cc-header">
         <div>
-          <img src="/consultantcloud-logo.png" alt="ConsultantCloud" width={124} height={32} />
+          <img src="/consultantcloud-logo.png" alt="Consultant Cloud" width={127} height={32} />
         </div>
         <div>
           <ModeToggle tab={tab} onChange={handleModeChange} />
@@ -197,9 +197,9 @@ export function ChatApp() {
       {tab === "architect" && (
         <div
           style={{
-            background: "#fffbeb",
-            borderBottom: "1px solid #fde68a",
-            color: "#92400e",
+            background: "var(--cc-warn-bg)",
+            borderBottom: "1px solid var(--cc-warn-line)",
+            color: "var(--cc-warn-text)",
             fontSize: "0.8125rem",
             padding: "8px 24px",
             textAlign: "center",
